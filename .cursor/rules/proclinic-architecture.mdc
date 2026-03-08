@@ -1,0 +1,439 @@
+---
+alwaysApply: true
+description: ProClinic Hospital Management System - Architecture, Modules, System Design, and UX Guidelines
+---
+
+# ProClinic Hospital Management System - Architecture & Design Guide
+
+## Project Overview
+
+ProClinic is a comprehensive **Hospital Management System (HMS)** built with modern web technologies. It's designed for managing outpatient (OPD) and inpatient (IPD) departments, patient records, appointments, billing, and administrative functions.
+
+## Technology Stack
+
+### Frontend
+- **Framework**: React 19 with TypeScript
+- **Styling**: Tailwind CSS v4
+- **Build Tool**: Vite
+- **Routing**: React Router v6
+- **State Management**: React Hooks (useState, useEffect)
+- **API Communication**: Fetch API
+- **Notifications**: react-hot-toast
+- **Icons**: Heroicons (SVG)
+
+### Backend
+- **Runtime**: Node.js (v18+)
+- **Framework**: Express.js
+- **Database**: MongoDB with Mongoose ODM
+- **Authentication**: JWT (JSON Web Tokens)
+- **Password Hashing**: bcryptjs
+- **Logging**: Winston (custom logger)
+- **File Upload**: Multer
+
+## System Architecture
+
+### Architecture Pattern
+- **3-Tier Architecture**: Presentation (Frontend) → Application (Backend API) → Data (MongoDB)
+- **RESTful API Design**: Stateless, resource-based endpoints
+- **Role-Based Access Control (RBAC)**: Permission-based authorization
+- **Separation of Concerns**: Controllers, Models, Routes, Middleware
+
+### Key Design Patterns
+1. **MVC Pattern**: Models (Mongoose schemas), Views (React components), Controllers (Express controllers)
+2. **Middleware Pattern**: Authentication, authorization, logging, error handling
+3. **Repository Pattern**: Models abstract database operations
+4. **Singleton Pattern**: Database connection, logger instances
+
+## Core Modules & Features
+
+### 1. Authentication & Authorization Module
+**Files**: 
+- Backend: [backend/controllers/authController.js](mdc:backend/controllers/authController.js), [backend/middleware/auth.js](mdc:backend/middleware/auth.js)
+- Frontend: [frontend/src/pages/Login.tsx](mdc:frontend/src/pages/Login.tsx), [frontend/src/utils/permissions.ts](mdc:frontend/src/utils/permissions.ts)
+
+**Features**:
+- JWT-based authentication
+- Role-based access control (RBAC)
+- Permission-based authorization
+- Session management (localStorage/sessionStorage)
+- Auto-refresh user permissions
+
+**User Roles**:
+- **Admin**: Full system access
+- **Doctor**: Patient care, appointments, OPD/IPD management
+- **Nurse**: Patient care, appointments
+- **Receptionist**: Patient registration, appointments, billing
+
+### 2. Patient Management Module
+**Files**: 
+- Backend: [backend/models/Patient.js](mdc:backend/models/Patient.js), [backend/controllers/patientController.js](mdc:backend/controllers/patientController.js)
+- Frontend: [frontend/src/pages/Patients.tsx](mdc:frontend/src/pages/Patients.tsx), [frontend/src/pages/PatientDetails.tsx](mdc:frontend/src/pages/PatientDetails.tsx)
+
+**Features**:
+- Patient registration with auto-generated patient IDs
+- Profile image upload
+- Address management with Indian pincode data
+- Medical history tracking
+- Allergies and chronic conditions
+- Patient tags for categorization
+- Search and filter capabilities
+- Patient history view
+
+**UX Considerations**:
+- Quick patient search for OPD/IPD registration
+- Patient autocomplete in forms
+- Patient ID format: `PAT-YYYYMMDD-XXXXXX`
+
+### 3. OPD (Outpatient Department) Module
+**Files**: 
+- Backend: [backend/models/OPD.js](mdc:backend/models/OPD.js), [backend/controllers/opdController.js](mdc:backend/controllers/opdController.js)
+- Frontend: [frontend/src/pages/OPDDashboard.tsx](mdc:frontend/src/pages/OPDDashboard.tsx), [frontend/src/pages/OPDRegister.tsx](mdc:frontend/src/pages/OPDRegister.tsx), [frontend/src/pages/OPDQueue.tsx](mdc:frontend/src/pages/OPDQueue.tsx), [frontend/src/pages/OPDList.tsx](mdc:frontend/src/pages/OPDList.tsx), [frontend/src/pages/OPDDetails.tsx](mdc:frontend/src/pages/OPDDetails.tsx)
+
+**Features**:
+- Quick OPD registration (new or existing patients)
+- Queue management with auto-numbering
+- Status workflow: registered → waiting → in-progress → completed
+- Doctor assignment
+- Medical records: chief complaint, diagnosis, treatment, prescription
+- Billing: consultation fee, additional charges, lab tests, payment tracking
+- Follow-up scheduling
+- Real-time queue updates
+- Statistics dashboard
+
+**OPD Number Format**: `OPD-YYYYMMDD-XXXXXX`
+
+**UX Flow**:
+1. Dashboard → View today's OPD stats and queue
+2. Register → Quick patient search/creation → Fill visit details → Submit
+3. Queue → Real-time view → Update status (Start Consult → Complete)
+4. Details → View/edit medical records → Process payment → Schedule follow-up
+
+### 4. IPD (Inpatient Department) Module
+**Files**: 
+- Backend: [backend/models/IPD.js](mdc:backend/models/IPD.js), [backend/controllers/ipdController.js](mdc:backend/controllers/ipdController.js)
+- Frontend: [frontend/src/pages/IPDDashboard.tsx](mdc:frontend/src/pages/IPDDashboard.tsx), [frontend/src/pages/IPDAdmit.tsx](mdc:frontend/src/pages/IPDAdmit.tsx), [frontend/src/pages/IPDList.tsx](mdc:frontend/src/pages/IPDList.tsx), [frontend/src/pages/IPDDetails.tsx](mdc:frontend/src/pages/IPDDetails.tsx)
+
+**Features**:
+- Patient admission (new or existing)
+- Room and bed assignment
+- Status workflow: admitted → under-treatment → discharged/transferred/deceased
+- Daily progress notes
+- Prescription management
+- Lab report tracking
+- Comprehensive billing (room, medication, procedures, lab, other charges)
+- Discharge management with summary and instructions
+- Follow-up scheduling
+- Length of stay tracking
+- Statistics and reporting
+
+**IPD Number Format**: `IPD-YYYYMMDD-XXXXXX`
+
+**UX Flow**:
+1. Dashboard → View current admissions, room stats
+2. Admit → Patient search/creation → Room/bed selection → Admission details → Submit
+3. Details → View/edit → Add progress notes → Add prescriptions → Add lab reports → Process payment → Discharge
+4. List → Filter by doctor, status, date → View all IPD records
+
+### 5. Room & Bed Management Module
+**Files**: 
+- Backend: [backend/models/Room.js](mdc:backend/models/Room.js), [backend/controllers/roomController.js](mdc:backend/controllers/roomController.js)
+- Frontend: [frontend/src/pages/Rooms.tsx](mdc:frontend/src/pages/Rooms.tsx)
+
+**Features**:
+- Room creation and management
+- Bed assignment and tracking
+- Room types: general, private, semi-private, ICU, CCU, isolation, ward
+- Bed status: available, occupied, maintenance, reserved
+- Occupancy rate calculation
+- Current patient tracking per room
+- Room amenities management
+- Rate per day configuration
+
+**UX Considerations**:
+- Visual bed status indicators
+- Quick room availability view
+- Click patient card to navigate to IPD details
+- Filter by room type, floor, ward, bed status
+
+### 6. User Management Module
+**Files**: 
+- Backend: [backend/models/User.js](mdc:backend/models/User.js), [backend/controllers/userController.js](mdc:backend/controllers/userController.js)
+- Frontend: [frontend/src/pages/Users.tsx](mdc:frontend/src/pages/Users.tsx), [frontend/src/pages/UserDetails.tsx](mdc:frontend/src/pages/UserDetails.tsx)
+
+**Features**:
+- User CRUD operations
+- Profile image upload
+- Role assignment
+- Permission management
+- User activation/deactivation
+- Search and filter
+
+### 7. Role & Permission Management Module
+**Files**: 
+- Backend: [backend/models/Role.js](mdc:backend/models/Role.js), [backend/controllers/roleController.js](mdc:backend/controllers/roleController.js), [backend/constants/permissions.js](mdc:backend/constants/permissions.js)
+- Frontend: [frontend/src/pages/Roles.tsx](mdc:frontend/src/pages/Roles.tsx), [frontend/src/pages/RoleDetails.tsx](mdc:frontend/src/pages/RoleDetails.tsx)
+
+**Features**:
+- Role creation and management
+- Permission assignment
+- System roles (admin, doctor, nurse, receptionist)
+- Custom role creation
+- Permission-based menu visibility
+
+### 8. Appointment Management Module
+**Files**: 
+- Backend: [backend/models/Appointment.js](mdc:backend/models/Appointment.js), [backend/controllers/appointmentController.js](mdc:backend/controllers/appointmentController.js)
+- Frontend: [frontend/src/pages/Appointments.tsx](mdc:frontend/src/pages/Appointments.tsx)
+
+**Features**:
+- Appointment scheduling
+- Doctor schedule integration
+- Appointment status tracking
+- Calendar view
+
+### 9. Doctor Schedule Module
+**Files**: 
+- Backend: [backend/models/DoctorSchedule.js](mdc:backend/models/DoctorSchedule.js), [backend/controllers/doctorScheduleController.js](mdc:backend/controllers/doctorScheduleController.js)
+- Frontend: [frontend/src/pages/DoctorSchedules.tsx](mdc:frontend/src/pages/DoctorSchedules.tsx)
+
+**Features**:
+- Doctor availability management
+- Time slot configuration
+- Holiday integration
+
+## System Design Principles
+
+### 1. Database Design
+- **MongoDB Collections**: Users, Patients, OPD, IPD, Rooms, Roles, Appointments, DoctorSchedules, Holidays, Documents, Visits
+- **Auto-Generated IDs**: Using Sequence model for unique IDs (patientId, opdNumber, ipdNumber)
+- **Indexing**: Strategic indexes on frequently queried fields (patientId, dates, status)
+- **Relationships**: References using ObjectId with populate() for joins
+- **Data Integrity**: Validation at schema level, required fields, enum constraints
+
+### 2. API Design
+- **RESTful Conventions**: 
+  - GET `/api/resource` - List all
+  - GET `/api/resource/:id` - Get one
+  - POST `/api/resource` - Create
+  - PUT `/api/resource/:id` - Update
+  - DELETE `/api/resource/:id` - Delete
+- **Query Parameters**: Filtering, pagination, sorting
+- **Response Format**: `{ success: boolean, message?: string, data?: object, count?: number }`
+- **Error Handling**: Consistent error responses, proper HTTP status codes
+
+### 3. Authentication & Authorization
+- **JWT Tokens**: Stored in localStorage/sessionStorage
+- **Token Refresh**: Auto-refresh user permissions every 30 seconds
+- **Permission Checking**: Middleware `hasPermission()` on routes
+- **Route Protection**: `ProtectedRoute` component on frontend
+- **Menu Filtering**: Sidebar items filtered by permissions
+
+### 4. File Upload
+- **Multer Middleware**: Profile images, documents
+- **Storage**: `backend/uploads/` directory
+- **File Types**: Images (jpeg, jpg, png), Documents (pdf, doc, docx)
+- **Size Limits**: Configured in middleware
+
+## UX Design Principles for Healthcare Applications
+
+### 1. Information Hierarchy
+- **Critical Information First**: Patient name, ID, status prominently displayed
+- **Progressive Disclosure**: Details in expandable sections
+- **Visual Status Indicators**: Color-coded badges for status (waiting, in-progress, completed)
+- **Quick Actions**: Primary actions (Admit, Discharge, Process Payment) easily accessible
+
+### 2. Workflow Optimization
+- **Quick Registration**: OPD/IPD registration with patient search autocomplete
+- **One-Click Actions**: Status updates, payment processing
+- **Contextual Actions**: Actions available based on current state (e.g., "Start Consult" only when waiting)
+- **Breadcrumb Navigation**: Clear navigation paths
+
+### 3. Data Entry Efficiency
+- **Smart Defaults**: Auto-fill current date/time, default values
+- **Autocomplete**: Patient search, doctor selection
+- **Form Validation**: Real-time validation with clear error messages
+- **Bulk Operations**: Where applicable (e.g., batch status updates)
+
+### 4. Visual Design
+- **Color Coding**:
+  - Blue: Waiting/Admitted
+  - Purple: In Progress/Under Treatment
+  - Green: Completed/Discharged/Available
+  - Amber: Partial Payment/Transferred
+  - Red: Pending Payment/Cancelled
+  - Slate: Deceased/Inactive
+- **Consistent Spacing**: Tailwind utility classes for consistent spacing
+- **Responsive Design**: Mobile-first approach, breakpoints: sm, md, lg
+- **Loading States**: Spinner animations, skeleton screens
+
+### 5. Error Handling & Feedback
+- **Toast Notifications**: Success (green), Error (red), Info (blue)
+- **Form Validation**: Inline error messages
+- **404 Handling**: Friendly error pages with navigation back
+- **Network Errors**: Retry mechanisms, clear error messages
+
+### 6. Performance Optimization
+- **Lazy Loading**: Code splitting, route-based chunks
+- **Pagination**: Limit results, load more functionality
+- **Debouncing**: Search input debouncing
+- **Caching**: User data, permissions cached in localStorage
+
+## Module Integration Patterns
+
+### 1. Patient → OPD/IPD Flow
+- Patient search/creation during OPD/IPD registration
+- Patient details accessible from OPD/IPD records
+- Patient history shows all OPD/IPD visits
+
+### 2. OPD/IPD → Billing Flow
+- Billing integrated within OPD/IPD records
+- Payment processing modal
+- Payment status tracking
+- Balance calculation
+
+### 3. Room → IPD Flow
+- Room selection during admission
+- Bed status auto-update on admission/discharge
+- Room occupancy tracking
+
+### 4. User → Role → Permission Flow
+- Users assigned to roles
+- Roles have permissions
+- Permissions control menu visibility and actions
+
+## Code Organization
+
+### Backend Structure
+```
+backend/
+├── config/          # Database, logger configuration
+├── constants/       # Permission constants
+├── controllers/     # Business logic
+├── middleware/      # Auth, logging, file upload
+├── models/          # Mongoose schemas
+├── routes/          # API route definitions
+├── scripts/         # Seed scripts
+└── utils/           # Helper functions
+```
+
+### Frontend Structure
+```
+frontend/src/
+├── components/      # Reusable components (Sidebar, ProtectedRoute)
+├── pages/          # Page components
+├── utils/          # API functions, permissions, toast, helpers
+└── App.tsx         # Main router
+```
+
+## Best Practices
+
+### 1. Naming Conventions
+- **Files**: PascalCase for components (PatientDetails.tsx), camelCase for utilities (api.ts)
+- **Variables**: camelCase (patientId, opdNumber)
+- **Constants**: UPPER_SNAKE_CASE (PERMISSIONS, API_BASE_URL)
+- **Functions**: camelCase (fetchPatients, handleSubmit)
+
+### 2. Component Structure
+- **Functional Components**: Use React hooks
+- **TypeScript Types**: Define types at top of file
+- **Props Validation**: TypeScript interfaces
+- **State Management**: useState for local, props for parent-child
+
+### 3. API Integration
+- **Centralized API**: All API calls in [frontend/src/utils/api.ts](mdc:frontend/src/utils/api.ts)
+- **Error Handling**: Try-catch blocks, toast notifications
+- **Loading States**: Loading indicators during API calls
+- **Token Management**: Auto-include in headers
+
+### 4. Form Handling
+- **Controlled Components**: All inputs controlled by state
+- **Validation**: Client-side validation before submission
+- **Submission**: Disable submit button during submission
+- **Reset**: Clear form after successful submission
+
+### 5. Navigation
+- **React Router**: Use useNavigate() for programmatic navigation
+- **Protected Routes**: Wrap with ProtectedRoute component
+- **Permission Checks**: Check permissions before showing actions
+- **Deep Linking**: Support direct URL access with permission checks
+
+## Security Considerations
+
+1. **Authentication**: JWT tokens, secure storage
+2. **Authorization**: Permission-based access control
+3. **Input Validation**: Both client and server-side
+4. **SQL Injection**: Not applicable (MongoDB), but validate inputs
+5. **XSS Prevention**: React auto-escapes, sanitize user inputs
+6. **CORS**: Configured for specific frontend URL
+7. **Password Hashing**: bcrypt with salt rounds
+
+## Performance Considerations
+
+1. **Database Queries**: Use indexes, limit results, populate selectively
+2. **API Responses**: Return only necessary data
+3. **Frontend**: Code splitting, lazy loading, memoization where needed
+4. **Images**: Optimize, use appropriate formats
+5. **Caching**: User data, permissions cached
+
+## Testing Considerations
+
+1. **Unit Tests**: Test utility functions, validators
+2. **Integration Tests**: Test API endpoints
+3. **E2E Tests**: Test critical user flows (login, patient registration, OPD/IPD)
+4. **Error Scenarios**: Test error handling, edge cases
+
+## Future Enhancements (Considerations)
+
+1. **Real-time Updates**: WebSocket for queue updates, notifications
+2. **Reporting**: Advanced analytics, charts, exports
+3. **Mobile App**: React Native for mobile access
+4. **Multi-language**: i18n support
+5. **Audit Logs**: Track all changes
+6. **Backup & Recovery**: Automated backups
+7. **Integration**: Lab systems, pharmacy systems
+
+## Key Files Reference
+
+### Configuration
+- [backend/server.js](mdc:backend/server.js) - Main server entry point
+- [backend/config/database.js](mdc:backend/config/database.js) - Database connection
+- [backend/constants/permissions.js](mdc:backend/constants/permissions.js) - Permission definitions
+
+### Models
+- [backend/models/Patient.js](mdc:backend/models/Patient.js) - Patient schema
+- [backend/models/OPD.js](mdc:backend/models/OPD.js) - OPD schema
+- [backend/models/IPD.js](mdc:backend/models/IPD.js) - IPD schema
+- [backend/models/Room.js](mdc:backend/models/Room.js) - Room schema
+- [backend/models/User.js](mdc:backend/models/User.js) - User schema
+- [backend/models/Role.js](mdc:backend/models/Role.js) - Role schema
+
+### Frontend Core
+- [frontend/src/App.tsx](mdc:frontend/src/App.tsx) - Main router
+- [frontend/src/components/Sidebar.tsx](mdc:frontend/src/components/Sidebar.tsx) - Navigation sidebar
+- [frontend/src/utils/api.ts](mdc:frontend/src/utils/api.ts) - API functions
+- [frontend/src/utils/permissions.ts](mdc:frontend/src/utils/permissions.ts) - Permission utilities
+
+## When Adding New Features
+
+1. **Follow Existing Patterns**: Match the structure of similar modules
+2. **Add Permissions**: Define in [backend/constants/permissions.js](mdc:backend/constants/permissions.js)
+3. **Create Model**: Define schema in `backend/models/`
+4. **Create Controller**: Business logic in `backend/controllers/`
+5. **Create Routes**: API routes in `backend/routes/`
+6. **Add to Server**: Register routes in [backend/server.js](mdc:backend/server.js)
+7. **Create Frontend API**: Add functions to [frontend/src/utils/api.ts](mdc:frontend/src/utils/api.ts)
+8. **Create Pages**: Add page components in `frontend/src/pages/`
+9. **Add Routes**: Register in [frontend/src/App.tsx](mdc:frontend/src/App.tsx)
+10. **Add Navigation**: Add menu items to [frontend/src/components/Sidebar.tsx](mdc:frontend/src/components/Sidebar.tsx)
+11. **Update Permissions**: Add to [frontend/src/utils/permissions.ts](mdc:frontend/src/utils/permissions.ts)
+12. **Seed Roles**: Run seed script to update admin role
+
+## UX Guidelines for Healthcare
+
+1. **Speed is Critical**: Minimize clicks, optimize workflows
+2. **Error Prevention**: Validation, confirmation dialogs for critical actions
+3. **Accessibility**: Keyboard navigation, screen reader support
+4. **Mobile Responsive**: All features work on mobile devices
+5. **Data Privacy**: Clear indication of sensitive data, proper access controls
+6. **Audit Trail**: Track who did what and when
+7. **Offline Capability**: Consider offline mode for critical functions
