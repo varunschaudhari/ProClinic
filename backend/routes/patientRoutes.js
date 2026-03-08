@@ -28,6 +28,9 @@ import {
   addLabResult,
   addImagingReport,
   addClinicalObservation,
+  addAllergy,
+  addTrackParameter,
+  addDiagnosis,
 } from "../controllers/clinicalDataController.js";
 import { protect, hasPermission } from "../middleware/auth.js";
 import upload from "../middleware/upload.js";
@@ -85,5 +88,8 @@ router.post("/:patientId/clinical-data/vital-signs", hasPermission(PERMISSIONS.P
 router.post("/:patientId/clinical-data/lab-results", hasPermission(PERMISSIONS.PATIENTS_EDIT), addLabResult);
 router.post("/:patientId/clinical-data/imaging-reports", hasPermission(PERMISSIONS.PATIENTS_EDIT), addImagingReport);
 router.post("/:patientId/clinical-data/observations", hasPermission(PERMISSIONS.PATIENTS_EDIT), addClinicalObservation);
+router.post("/:patientId/clinical-data/allergies", hasPermission(PERMISSIONS.PATIENTS_EDIT), addAllergy);
+router.post("/:patientId/clinical-data/track-parameters", hasPermission(PERMISSIONS.PATIENTS_EDIT), addTrackParameter);
+router.post("/:patientId/clinical-data/diagnoses", hasPermission(PERMISSIONS.PATIENTS_EDIT), addDiagnosis);
 
 export default router;

@@ -318,6 +318,30 @@ export const patientsAPI = {
     });
     return response.json();
   },
+
+  addAllergy: async (patientId: string, allergy: any) => {
+    const response = await apiRequest(`/patients/${patientId}/clinical-data/allergies`, {
+      method: "POST",
+      body: JSON.stringify(allergy),
+    });
+    return response.json();
+  },
+
+  addTrackParameter: async (patientId: string, parameter: any) => {
+    const response = await apiRequest(`/patients/${patientId}/clinical-data/track-parameters`, {
+      method: "POST",
+      body: JSON.stringify(parameter),
+    });
+    return response.json();
+  },
+
+  addDiagnosis: async (patientId: string, diagnosis: any) => {
+    const response = await apiRequest(`/patients/${patientId}/clinical-data/diagnoses`, {
+      method: "POST",
+      body: JSON.stringify(diagnosis),
+    });
+    return response.json();
+  },
 };
 
 // Visits API
@@ -424,12 +448,22 @@ export const appointmentsAPI = {
     patientId?: string;
     date?: string;
     status?: string;
+    priority?: string;
+    appointmentType?: string;
+    startDate?: string;
+    endDate?: string;
+    search?: string;
   }) => {
     const queryParams = new URLSearchParams();
     if (params?.doctorId) queryParams.append("doctorId", params.doctorId);
     if (params?.patientId) queryParams.append("patientId", params.patientId);
     if (params?.date) queryParams.append("date", params.date);
     if (params?.status) queryParams.append("status", params.status);
+    if (params?.priority) queryParams.append("priority", params.priority);
+    if (params?.appointmentType) queryParams.append("appointmentType", params.appointmentType);
+    if (params?.startDate) queryParams.append("startDate", params.startDate);
+    if (params?.endDate) queryParams.append("endDate", params.endDate);
+    if (params?.search) queryParams.append("search", params.search);
     const queryString = queryParams.toString();
     const response = await apiRequest(`/appointments${queryString ? `?${queryString}` : ""}`);
     return response.json();
@@ -437,6 +471,20 @@ export const appointmentsAPI = {
 
   getById: async (id: string) => {
     const response = await apiRequest(`/appointments/${id}`);
+    return response.json();
+  },
+
+  getStats: async (params?: {
+    doctorId?: string;
+    startDate?: string;
+    endDate?: string;
+  }) => {
+    const queryParams = new URLSearchParams();
+    if (params?.doctorId) queryParams.append("doctorId", params.doctorId);
+    if (params?.startDate) queryParams.append("startDate", params.startDate);
+    if (params?.endDate) queryParams.append("endDate", params.endDate);
+    const queryString = queryParams.toString();
+    const response = await apiRequest(`/appointments/stats${queryString ? `?${queryString}` : ""}`);
     return response.json();
   },
 
@@ -451,8 +499,11 @@ export const appointmentsAPI = {
     appointmentDate: string;
     appointmentTime: string;
     appointmentType?: "booked" | "walk-in";
+    priority?: "low" | "normal" | "high" | "urgent";
+    duration?: number;
     chiefComplaint?: string;
     notes?: string;
+    reminderEnabled?: boolean;
   }) => {
     const response = await apiRequest("/appointments", {
       method: "POST",
@@ -467,14 +518,40 @@ export const appointmentsAPI = {
       appointmentDate?: string;
       appointmentTime?: string;
       appointmentType?: "booked" | "walk-in";
-      status?: "scheduled" | "completed" | "cancelled" | "no-show";
+      status?: "scheduled" | "completed" | "cancelled" | "no-show" | "rescheduled";
+      priority?: "low" | "normal" | "high" | "urgent";
+      duration?: number;
       chiefComplaint?: string;
       notes?: string;
+      reminderEnabled?: boolean;
     }
   ) => {
     const response = await apiRequest(`/appointments/${id}`, {
       method: "PUT",
       body: JSON.stringify(appointmentData),
+    });
+    return response.json();
+  },
+
+  reschedule: async (id: string, data: { appointmentDate: string; appointmentTime: string; reason?: string }) => {
+    const response = await apiRequest(`/appointments/${id}/reschedule`, {
+      method: "PUT",
+      body: JSON.stringify(data),
+    });
+    return response.json();
+  },
+
+  cancel: async (id: string, cancellationReason?: string) => {
+    const response = await apiRequest(`/appointments/${id}/cancel`, {
+      method: "PUT",
+      body: JSON.stringify({ cancellationReason }),
+    });
+    return response.json();
+  },
+
+  convertToOPD: async (id: string) => {
+    const response = await apiRequest(`/appointments/${id}/convert-to-opd`, {
+      method: "POST",
     });
     return response.json();
   },

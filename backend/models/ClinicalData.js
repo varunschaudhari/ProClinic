@@ -200,6 +200,120 @@ const clinicalDataSchema = new mongoose.Schema(
         },
       },
     ],
+    // Allergy tracking
+    allergies: [
+      {
+        allergen: {
+          type: String,
+          required: true,
+          trim: true,
+        },
+        severity: {
+          type: String,
+          enum: ["mild", "moderate", "severe", "life-threatening"],
+          default: "moderate",
+        },
+        reaction: {
+          type: String,
+          trim: true,
+        },
+        firstObserved: {
+          type: Date,
+          default: Date.now,
+        },
+        lastObserved: {
+          type: Date,
+          default: Date.now,
+        },
+        status: {
+          type: String,
+          enum: ["active", "resolved", "monitoring"],
+          default: "active",
+        },
+        notes: {
+          type: String,
+          trim: true,
+        },
+        recordedBy: {
+          type: mongoose.Schema.Types.ObjectId,
+          ref: "User",
+        },
+      },
+    ],
+    // Track Parameters (additional metrics beyond vitals)
+    trackParameters: [
+      {
+        date: {
+          type: Date,
+          default: Date.now,
+        },
+        parameterName: {
+          type: String,
+          required: true,
+          trim: true,
+        },
+        value: {
+          type: mongoose.Schema.Types.Mixed, // Can be number or string
+        },
+        unit: {
+          type: String,
+          trim: true,
+        },
+        normalRange: {
+          type: String,
+          trim: true,
+        },
+        status: {
+          type: String,
+          enum: ["normal", "abnormal", "critical"],
+          default: "normal",
+        },
+        notes: {
+          type: String,
+          trim: true,
+        },
+        recordedBy: {
+          type: mongoose.Schema.Types.ObjectId,
+          ref: "User",
+        },
+      },
+    ],
+    // Diagnosis tracking
+    diagnoses: [
+      {
+        date: {
+          type: Date,
+          default: Date.now,
+        },
+        diagnosis: {
+          type: String,
+          required: true,
+          trim: true,
+        },
+        icdCode: {
+          type: String,
+          trim: true,
+        },
+        type: {
+          type: String,
+          enum: ["primary", "secondary", "differential", "provisional", "confirmed"],
+          default: "primary",
+        },
+        status: {
+          type: String,
+          enum: ["active", "resolved", "chronic", "monitoring"],
+          default: "active",
+        },
+        notes: {
+          type: String,
+          trim: true,
+        },
+        diagnosedBy: {
+          type: mongoose.Schema.Types.ObjectId,
+          ref: "User",
+        },
+      },
+    ],
     // Created/Updated by
     createdBy: {
       type: mongoose.Schema.Types.ObjectId,

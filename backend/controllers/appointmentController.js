@@ -2,6 +2,7 @@ import Appointment from "../models/Appointment.js";
 import Patient from "../models/Patient.js";
 import DoctorSchedule from "../models/DoctorSchedule.js";
 import Holiday from "../models/Holiday.js";
+import OPD from "../models/OPD.js";
 import { logInfo, logError } from "../config/logger.js";
 
 // @desc    Get all appointments
@@ -9,24 +10,48 @@ import { logInfo, logError } from "../config/logger.js";
 // @access  Private
 export const getAppointments = async (req, res) => {
   try {
-    const { doctorId, patientId, date, status } = req.query;
+    const { doctorId, patientId, date, status, priority, appointmentType, startDate, endDate, search } = req.query;
     const query = {};
 
     if (doctorId) query.doctorId = doctorId;
     if (patientId) query.patientId = patientId;
-    if (date) {
+    if (status) query.status = status;
+    if (priority) query.priority = priority;
+    if (appointmentType) query.appointmentType = appointmentType;
+    
+    // Date range filter
+    if (startDate && endDate) {
+      const start = new Date(startDate);
+      start.setHours(0, 0, 0, 0);
+      const end = new Date(endDate);
+      end.setHours(23, 59, 59, 999);
+      query.appointmentDate = { $gte: start, $lte: end };
+    } else if (date) {
       const startDate = new Date(date);
       startDate.setHours(0, 0, 0, 0);
       const endDate = new Date(date);
       endDate.setHours(23, 59, 59, 999);
       query.appointmentDate = { $gte: startDate, $lte: endDate };
     }
-    if (status) query.status = status;
+
+    // Search filter
+    if (search) {
+      query.$or = [
+        { appointmentNumber: { $regex: search, $options: "i" } },
+      ];
+    }
 
     const appointments = await Appointment.find(query)
-      .populate("patientId", "name phone patientId")
+      .populate("patientId", "name phone patientId email")
       .populate("doctorId", "name email")
       .populate("createdBy", "name email")
+      .populate("updatedBy", "name email")
+      .populate("cancelledBy", "name email")
+      .populate("rescheduledBy", "name email")
+      .populate("convertedBy", "name email")
+      .populate("followUpAppointmentId", "appointmentNumber appointmentDate appointmentTime")
+      .populate("originalAppointmentId", "appointmentNumber appointmentDate appointmentTime")
+      .populate("history.changedBy", "name email")
       .sort({ appointmentDate: 1, appointmentTime: 1 });
 
     logInfo("Appointments fetched", {
@@ -41,6 +66,88 @@ export const getAppointments = async (req, res) => {
     });
   } catch (error) {
     logError("Get appointments error", error, {
+      userId: req.user?.id,
+    });
+    res.status(500).json({
+      success: false,
+      message: "Server error. Please try again later.",
+    });
+  }
+};
+
+// @desc    Get appointment statistics
+// @route   GET /api/appointments/stats
+// @access  Private
+export const getAppointmentStats = async (req, res) => {
+  try {
+    const { doctorId, startDate, endDate } = req.query;
+    const query = {};
+
+    if (doctorId) query.doctorId = doctorId;
+    if (startDate && endDate) {
+      const start = new Date(startDate);
+      start.setHours(0, 0, 0, 0);
+      const end = new Date(endDate);
+      end.setHours(23, 59, 59, 999);
+      query.appointmentDate = { $gte: start, $lte: end };
+    } else {
+      // Default to today
+      const today = new Date();
+      today.setHours(0, 0, 0, 0);
+      const tomorrow = new Date(today);
+      tomorrow.setDate(tomorrow.getDate() + 1);
+      query.appointmentDate = { $gte: today, $lt: tomorrow };
+    }
+
+    const [
+      total,
+      scheduled,
+      completed,
+      cancelled,
+      noShow,
+      todayAppointments,
+      upcomingAppointments,
+      overdueAppointments,
+    ] = await Promise.all([
+      Appointment.countDocuments(query),
+      Appointment.countDocuments({ ...query, status: "scheduled" }),
+      Appointment.countDocuments({ ...query, status: "completed" }),
+      Appointment.countDocuments({ ...query, status: "cancelled" }),
+      Appointment.countDocuments({ ...query, status: "no-show" }),
+      Appointment.countDocuments({
+        ...query,
+        appointmentDate: {
+          $gte: new Date(new Date().setHours(0, 0, 0, 0)),
+          $lt: new Date(new Date().setHours(23, 59, 59, 999)),
+        },
+      }),
+      Appointment.countDocuments({
+        ...query,
+        appointmentDate: { $gt: new Date() },
+        status: "scheduled",
+      }),
+      Appointment.countDocuments({
+        ...query,
+        appointmentDate: { $lt: new Date() },
+        status: "scheduled",
+      }),
+    ]);
+
+    res.status(200).json({
+      success: true,
+      data: {
+        total,
+        scheduled,
+        completed,
+        cancelled,
+        noShow,
+        todayAppointments,
+        upcomingAppointments,
+        overdueAppointments,
+      },
+    });
+  } catch (error) {
+    logError("Get appointment stats error", error, {
       userId: req.user?.id,
     });
     res.status(500).json({
@@ -288,15 +395,27 @@ export const createAppointment = async (req, res) => {
       appointmentDate: appointmentDateTime,
       appointmentTime,
       appointmentType: appointmentType || "booked",
+      priority: req.body.priority || "normal",
+      duration: req.body.duration || 30,
       chiefComplaint: chiefComplaint || null,
       notes: notes || null,
+      reminderEnabled: req.body.reminderEnabled !== undefined ? req.body.reminderEnabled : true,
       createdBy: req.user.id,
     });
 
+    // Add creation to history
+    appointment.history.push({
+      action: "created",
+      changedBy: req.user.id,
+      notes: "Appointment created",
+    });
+    await appointment.save();
+
     const populatedAppointment = await Appointment.findById(appointment._id)
-      .populate("patientId", "name phone patientId")
+      .populate("patientId", "name phone patientId email")
       .populate("doctorId", "name email")
-      .populate("createdBy", "name email");
+      .populate("createdBy", "name email")
+      .populate("history.changedBy", "name email");
 
     logInfo("Appointment created", {
       createdBy: req.user.id,
@@ -338,8 +457,11 @@ export const updateAppointment = async (req, res) => {
       appointmentTime,
       appointmentType,
       status,
+      priority,
       chiefComplaint,
       notes,
+      duration,
+      reminderEnabled,
     } = req.body;
 
     const appointment = await Appointment.findById(req.params.id);
@@ -350,6 +472,14 @@ export const updateAppointment = async (req, res) => {
         message: "Appointment not found",
       });
     }
+
+    // Track previous values for history
+    const previousValues = {
+      appointmentDate: appointment.appointmentDate,
+      appointmentTime: appointment.appointmentTime,
+      status: appointment.status,
+      priority: appointment.priority,
+    };
 
     // Check slot availability if date/time is being changed
     if (appointmentDate || appointmentTime) {
@@ -377,19 +507,34 @@ export const updateAppointment = async (req, res) => {
       }
     }
 
+    // Update fields
     if (appointmentDate) appointment.appointmentDate = new Date(appointmentDate);
     if (appointmentTime) appointment.appointmentTime = appointmentTime;
     if (appointmentType) appointment.appointmentType = appointmentType;
     if (status) appointment.status = status;
+    if (priority) appointment.priority = priority;
     if (chiefComplaint !== undefined) appointment.chiefComplaint = chiefComplaint || null;
     if (notes !== undefined) appointment.notes = notes || null;
+    if (duration) appointment.duration = duration;
+    if (reminderEnabled !== undefined) appointment.reminderEnabled = reminderEnabled;
+    appointment.updatedBy = req.user.id;
+
+    // Add to history
+    appointment.history.push({
+      action: "updated",
+      changedBy: req.user.id,
+      previousValues,
+      notes: "Appointment updated",
+    });
 
     await appointment.save();
 
     const populatedAppointment = await Appointment.findById(appointment._id)
-      .populate("patientId", "name phone patientId")
+      .populate("patientId", "name phone patientId email")
       .populate("doctorId", "name email")
-      .populate("createdBy", "name email");
+      .populate("createdBy", "name email")
+      .populate("updatedBy", "name email")
+      .populate("history.changedBy", "name email");
 
     logInfo("Appointment updated", {
       updatedBy: req.user.id,
@@ -413,6 +558,278 @@ export const updateAppointment = async (req, res) => {
         message: messages.join(", "),
       });
     }
+    res.status(500).json({
+      success: false,
+      message: "Server error. Please try again later.",
+    });
+  }
+};
+
+// @desc    Reschedule appointment
+// @route   PUT /api/appointments/:id/reschedule
+// @access  Private
+export const rescheduleAppointment = async (req, res) => {
+  try {
+    const { appointmentDate, appointmentTime, reason } = req.body;
+
+    if (!appointmentDate || !appointmentTime) {
+      return res.status(400).json({
+        success: false,
+        message: "Appointment date and time are required",
+      });
+    }
+
+    const appointment = await Appointment.findById(req.params.id);
+
+    if (!appointment) {
+      return res.status(404).json({
+        success: false,
+        message: "Appointment not found",
+      });
+    }
+
+    if (appointment.status === "cancelled" || appointment.status === "completed") {
+      return res.status(400).json({
+        success: false,
+        message: "Cannot reschedule a cancelled or completed appointment",
+      });
+    }
+
+    // Check slot availability
+    const newDate = new Date(appointmentDate);
+    const startDate = new Date(newDate);
+    startDate.setHours(0, 0, 0, 0);
+    const endDate = new Date(newDate);
+    endDate.setHours(23, 59, 59, 999);
+
+    const existingAppointment = await Appointment.findOne({
+      doctorId: appointment.doctorId,
+      appointmentDate: { $gte: startDate, $lte: endDate },
+      appointmentTime,
+      status: { $ne: "cancelled" },
+      _id: { $ne: appointment._id },
+    });
+
+    if (existingAppointment) {
+      return res.status(400).json({
+        success: false,
+        message: "This time slot is already booked",
+      });
+    }
+
+    // Store previous values
+    appointment.rescheduledFrom = {
+      date: appointment.appointmentDate,
+      time: appointment.appointmentTime,
+    };
+    appointment.appointmentDate = newDate;
+    appointment.appointmentTime = appointmentTime;
+    appointment.status = "rescheduled";
+    appointment.rescheduledBy = req.user.id;
+    appointment.rescheduledAt = new Date();
+    appointment.updatedBy = req.user.id;
+
+    // Add to history
+    appointment.history.push({
+      action: "rescheduled",
+      changedBy: req.user.id,
+      previousValues: {
+        appointmentDate: appointment.rescheduledFrom.date,
+        appointmentTime: appointment.rescheduledFrom.time,
+      },
+      notes: reason || "Appointment rescheduled",
+    });
+
+    await appointment.save();
+
+    const populatedAppointment = await Appointment.findById(appointment._id)
+      .populate("patientId", "name phone patientId email")
+      .populate("doctorId", "name email")
+      .populate("rescheduledBy", "name email")
+      .populate("history.changedBy", "name email");
+
+    logInfo("Appointment rescheduled", {
+      rescheduledBy: req.user.id,
+      appointmentId: appointment._id,
+    });
+
+    res.status(200).json({
+      success: true,
+      message: "Appointment rescheduled successfully",
+      data: { appointment: populatedAppointment },
+    });
+  } catch (error) {
+    logError("Reschedule appointment error", error, {
+      rescheduledBy: req.user?.id,
+      appointmentId: req.params.id,
+    });
+    res.status(500).json({
+      success: false,
+      message: "Server error. Please try again later.",
+    });
+  }
+};
+
+// @desc    Cancel appointment
+// @route   PUT /api/appointments/:id/cancel
+// @access  Private
+export const cancelAppointment = async (req, res) => {
+  try {
+    const { cancellationReason } = req.body;
+
+    const appointment = await Appointment.findById(req.params.id);
+
+    if (!appointment) {
+      return res.status(404).json({
+        success: false,
+        message: "Appointment not found",
+      });
+    }
+
+    if (appointment.status === "cancelled") {
+      return res.status(400).json({
+        success: false,
+        message: "Appointment is already cancelled",
+      });
+    }
+
+    if (appointment.status === "completed") {
+      return res.status(400).json({
+        success: false,
+        message: "Cannot cancel a completed appointment",
+      });
+    }
+
+    const previousStatus = appointment.status;
+    appointment.status = "cancelled";
+    appointment.cancellationReason = cancellationReason || null;
+    appointment.cancelledBy = req.user.id;
+    appointment.cancelledAt = new Date();
+    appointment.updatedBy = req.user.id;
+
+    // Add to history
+    appointment.history.push({
+      action: "cancelled",
+      changedBy: req.user.id,
+      previousValues: {
+        status: previousStatus,
+      },
+      notes: cancellationReason || "Appointment cancelled",
+    });
+
+    await appointment.save();
+
+    const populatedAppointment = await Appointment.findById(appointment._id)
+      .populate("patientId", "name phone patientId email")
+      .populate("doctorId", "name email")
+      .populate("cancelledBy", "name email")
+      .populate("history.changedBy", "name email");
+
+    logInfo("Appointment cancelled", {
+      cancelledBy: req.user.id,
+      appointmentId: appointment._id,
+    });
+
+    res.status(200).json({
+      success: true,
+      message: "Appointment cancelled successfully",
+      data: { appointment: populatedAppointment },
+    });
+  } catch (error) {
+    logError("Cancel appointment error", error, {
+      cancelledBy: req.user?.id,
+      appointmentId: req.params.id,
+    });
+    res.status(500).json({
+      success: false,
+      message: "Server error. Please try again later.",
+    });
+  }
+};
+
+// @desc    Convert appointment to OPD visit
+// @route   POST /api/appointments/:id/convert-to-opd
+// @access  Private
+export const convertToOPD = async (req, res) => {
+  try {
+    const appointment = await Appointment.findById(req.params.id);
+
+    if (!appointment) {
+      return res.status(404).json({
+        success: false,
+        message: "Appointment not found",
+      });
+    }
+
+    if (appointment.convertedToOPD) {
+      return res.status(400).json({
+        success: false,
+        message: "Appointment is already converted to OPD",
+      });
+    }
+
+    if (appointment.status === "cancelled") {
+      return res.status(400).json({
+        success: false,
+        message: "Cannot convert a cancelled appointment to OPD",
+      });
+    }
+
+    // Create OPD record
+    const opdRecord = await OPD.create({
+      patientId: appointment.patientId,
+      doctorId: appointment.doctorId,
+      visitDate: appointment.appointmentDate,
+      visitTime: appointment.appointmentTime,
+      status: "registered",
+      chiefComplaint: appointment.chiefComplaint || null,
+      notes: appointment.notes || null,
+      createdBy: req.user.id,
+    });
+
+    // Update appointment
+    appointment.convertedToOPD = true;
+    appointment.opdId = opdRecord._id;
+    appointment.convertedAt = new Date();
+    appointment.convertedBy = req.user.id;
+    appointment.status = "completed";
+    appointment.updatedBy = req.user.id;
+
+    // Add to history
+    appointment.history.push({
+      action: "converted_to_opd",
+      changedBy: req.user.id,
+      notes: `Converted to OPD: ${opdRecord.opdNumber}`,
+    });
+
+    await appointment.save();
+
+    const populatedAppointment = await Appointment.findById(appointment._id)
+      .populate("patientId", "name phone patientId email")
+      .populate("doctorId", "name email")
+      .populate("opdId", "opdNumber status")
+      .populate("convertedBy", "name email")
+      .populate("history.changedBy", "name email");
+
+    logInfo("Appointment converted to OPD", {
+      convertedBy: req.user.id,
+      appointmentId: appointment._id,
+      opdId: opdRecord._id,
+    });
+
+    res.status(200).json({
+      success: true,
+      message: "Appointment converted to OPD successfully",
+      data: {
+        appointment: populatedAppointment,
+        opd: opdRecord,
+      },
+    });
+  } catch (error) {
+    logError("Convert appointment to OPD error", error, {
+      convertedBy: req.user?.id,
+      appointmentId: req.params.id,
+    });
     res.status(500).json({
       success: false,
       message: "Server error. Please try again later.",

@@ -20,6 +20,9 @@ export const getClinicalData = async (req, res) => {
       .populate("imagingReports.orderedBy", "name email")
       .populate("imagingReports.reviewedBy", "name email")
       .populate("clinicalObservations.recordedBy", "name email")
+      .populate("allergies.recordedBy", "name email")
+      .populate("trackParameters.recordedBy", "name email")
+      .populate("diagnoses.diagnosedBy", "name email")
       .sort({ createdAt: -1 });
 
     // Get clinical data from OPD records
@@ -309,6 +312,159 @@ export const addClinicalObservation = async (req, res) => {
     res.status(500).json({
       success: false,
       message: "Error adding clinical observation",
+      error: error.message,
+    });
+  }
+};
+
+// @desc    Add allergy
+// @route   POST /api/patients/:patientId/clinical-data/allergies
+// @access  Private
+export const addAllergy = async (req, res) => {
+  try {
+    const { patientId } = req.params;
+    const userId = req.user.id;
+    const allergyData = req.body;
+
+    let clinicalData = await ClinicalData.findOne({
+      patientId,
+      sourceType: "standalone",
+    });
+
+    if (!clinicalData) {
+      clinicalData = new ClinicalData({
+        patientId,
+        sourceType: "standalone",
+        createdBy: userId,
+        updatedBy: userId,
+      });
+    }
+
+    clinicalData.allergies.push({
+      ...allergyData,
+      recordedBy: userId,
+    });
+
+    clinicalData.updatedBy = userId;
+    const savedData = await clinicalData.save();
+    await savedData.populate([
+      { path: "allergies.recordedBy", select: "name email" },
+    ]);
+
+    logInfo(`Added allergy for patient ${patientId}`);
+
+    res.status(200).json({
+      success: true,
+      message: "Allergy added successfully",
+      data: savedData,
+    });
+  } catch (error) {
+    logError("Add allergy error", error);
+    res.status(500).json({
+      success: false,
+      message: "Error adding allergy",
+      error: error.message,
+    });
+  }
+};
+
+// @desc    Add track parameter
+// @route   POST /api/patients/:patientId/clinical-data/track-parameters
+// @access  Private
+export const addTrackParameter = async (req, res) => {
+  try {
+    const { patientId } = req.params;
+    const userId = req.user.id;
+    const parameterData = req.body;
+
+    let clinicalData = await ClinicalData.findOne({
+      patientId,
+      sourceType: "standalone",
+    });
+
+    if (!clinicalData) {
+      clinicalData = new ClinicalData({
+        patientId,
+        sourceType: "standalone",
+        createdBy: userId,
+        updatedBy: userId,
+      });
+    }
+
+    clinicalData.trackParameters.push({
+      ...parameterData,
+      recordedBy: userId,
+    });
+
+    clinicalData.updatedBy = userId;
+    const savedData = await clinicalData.save();
+    await savedData.populate([
+      { path: "trackParameters.recordedBy", select: "name email" },
+    ]);
+
+    logInfo(`Added track parameter for patient ${patientId}`);
+
+    res.status(200).json({
+      success: true,
+      message: "Track parameter added successfully",
+      data: savedData,
+    });
+  } catch (error) {
+    logError("Add track parameter error", error);
+    res.status(500).json({
+      success: false,
+      message: "Error adding track parameter",
+      error: error.message,
+    });
+  }
+};
+
+// @desc    Add diagnosis
+// @route   POST /api/patients/:patientId/clinical-data/diagnoses
+// @access  Private
+export const addDiagnosis = async (req, res) => {
+  try {
+    const { patientId } = req.params;
+    const userId = req.user.id;
+    const diagnosisData = req.body;
+
+    let clinicalData = await ClinicalData.findOne({
+      patientId,
+      sourceType: "standalone",
+    });
+
+    if (!clinicalData) {
+      clinicalData = new ClinicalData({
+        patientId,
+        sourceType: "standalone",
+        createdBy: userId,
+        updatedBy: userId,
+      });
+    }
+
+    clinicalData.diagnoses.push({
+      ...diagnosisData,
+      diagnosedBy: userId,
+    });
+
+    clinicalData.updatedBy = userId;
+    const savedData = await clinicalData.save();
+    await savedData.populate([
+      { path: "diagnoses.diagnosedBy", select: "name email" },
+    ]);
+
+    logInfo(`Added diagnosis for patient ${patientId}`);
+
+    res.status(200).json({
+      success: true,
+      message: "Diagnosis added successfully",
+      data: savedData,
+    });
+  } catch (error) {
+    logError("Add diagnosis error", error);
+    res.status(500).json({
+      success: false,
+      message: "Error adding diagnosis",
       error: error.message,
     });
   }

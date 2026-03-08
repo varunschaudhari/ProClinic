@@ -150,6 +150,9 @@ function PatientDetails() {
   // Modals for new tabs
   const [showRemarkModal, setShowRemarkModal] = useState(false);
   const [remarkForm, setRemarkForm] = useState({ remark: "", remarkType: "general", allowedRoles: ["doctor", "nurse"], isPrivate: false });
+  
+  // Clinical Data submenu state
+  const [clinicalSubMenu, setClinicalSubMenu] = useState<"allergy" | "vitals" | "body-composition" | "track-parameters" | "diagnosis" | "reports">("vitals");
   const [documentForm, setDocumentForm] = useState({
     documentType: "Report",
     title: "",
@@ -2308,75 +2311,499 @@ function PatientDetails() {
 
           {/* Tab Content - Clinical Data */}
           {!isEditing && activeTab === "clinical" && (
-            <div className="rounded-xl border border-slate-200 bg-white shadow-sm">
-              <div className="border-b border-slate-200 px-4 py-3 sm:px-6 sm:py-4">
-                <h2 className="text-lg font-semibold text-slate-900">Clinical Data</h2>
-                <p className="mt-0.5 text-xs text-slate-600 sm:text-sm">
-                  Vital signs, lab results, imaging reports, and clinical observations
-                </p>
-              </div>
-              <div className="p-4 sm:p-6">
-                {loadingClinical ? (
-                  <div className="flex items-center justify-center py-8">
-                    <div className="h-6 w-6 animate-spin rounded-full border-2 border-indigo-600 border-r-transparent"></div>
-                  </div>
-                ) : clinicalData ? (
-                  <div className="space-y-6">
-                    {/* Vital Signs */}
-                    {clinicalData.standalone?.[0]?.vitalSigns?.length > 0 && (
-                      <div>
-                        <h3 className="mb-3 text-base font-semibold text-slate-900">Vital Signs</h3>
-                        <div className="space-y-2">
-                          {clinicalData.standalone[0].vitalSigns.map((vs: any, idx: number) => (
-                            <div key={idx} className="rounded-lg border border-slate-200 bg-slate-50/50 p-3">
-                              <p className="text-xs text-slate-600">
-                                {new Date(vs.date).toLocaleDateString()}
-                              </p>
-                              <div className="mt-2 grid grid-cols-2 gap-2 text-sm">
-                                {vs.bloodPressure && (
-                                  <span>BP: {vs.bloodPressure.systolic}/{vs.bloodPressure.diastolic}</span>
-                                )}
-                                {vs.temperature && (
-                                  <span>Temp: {vs.temperature.value}°{vs.temperature.unit === "celsius" ? "C" : "F"}</span>
-                                )}
-                                {vs.pulse && <span>Pulse: {vs.pulse} bpm</span>}
-                                {vs.oxygenSaturation && <span>SpO2: {vs.oxygenSaturation}%</span>}
-                              </div>
-                            </div>
-                          ))}
-                        </div>
-                      </div>
-                    )}
+            <div className="rounded-xl border border-slate-200 bg-white shadow-sm overflow-hidden">
+              <div className="flex flex-col lg:flex-row h-full min-h-[600px]">
+                {/* Sidebar Menu */}
+                <div className="w-full lg:w-64 border-b lg:border-b-0 lg:border-r border-slate-200 bg-slate-50/50">
+                  <nav className="p-2">
+                    {[
+                      { id: "allergy", label: "Allergy" },
+                      { id: "vitals", label: "Vitals" },
+                      { id: "body-composition", label: "Body Composition" },
+                      { id: "track-parameters", label: "Track Parameters" },
+                      { id: "diagnosis", label: "Diagnosis" },
+                      { id: "reports", label: "Reports" },
+                    ].map((item) => (
+                      <button
+                        key={item.id}
+                        onClick={() => setClinicalSubMenu(item.id as typeof clinicalSubMenu)}
+                        className={`w-full text-left px-4 py-3 rounded-lg text-sm font-medium transition-all mb-1 ${
+                          clinicalSubMenu === item.id
+                            ? "bg-indigo-600 text-white shadow-sm"
+                            : "text-slate-700 hover:bg-slate-100"
+                        }`}
+                      >
+                        {item.label}
+                      </button>
+                    ))}
+                  </nav>
+                </div>
 
-                    {/* Lab Results */}
-                    {(clinicalData.standalone?.[0]?.labResults?.length > 0 || clinicalData.fromOPD?.some((opd: any) => opd.labTests?.length > 0) || clinicalData.fromIPD?.some((ipd: any) => ipd.labReports?.length > 0)) && (
-                      <div>
-                        <h3 className="mb-3 text-base font-semibold text-slate-900">Lab Results</h3>
-                        <div className="space-y-2">
-                          {clinicalData.standalone?.[0]?.labResults?.map((lab: any, idx: number) => (
-                            <div key={idx} className="rounded-lg border border-slate-200 bg-slate-50/50 p-3">
-                              <div className="flex items-center justify-between mb-1">
-                                <span className="font-medium text-slate-900">{lab.testName}</span>
-                                <span className="text-xs text-slate-600">
-                                  {new Date(lab.testDate).toLocaleDateString()}
-                                </span>
-                              </div>
-                              {lab.results && <p className="text-sm text-slate-700">{lab.results}</p>}
-                            </div>
-                          ))}
-                        </div>
-                      </div>
-                    )}
-
-                    <div className="text-center text-sm text-slate-600">
-                      Clinical data from OPD and IPD records is also available
+                {/* Content Area */}
+                <div className="flex-1 overflow-y-auto">
+                  {loadingClinical ? (
+                    <div className="flex items-center justify-center py-12">
+                      <div className="h-6 w-6 animate-spin rounded-full border-2 border-indigo-600 border-r-transparent"></div>
                     </div>
-                  </div>
-                ) : (
-                  <div className="flex flex-col items-center justify-center py-8 text-center">
-                    <p className="text-sm text-slate-600">No clinical data available</p>
-                  </div>
-                )}
+                  ) : (
+                    <div className="p-4 sm:p-6">
+                      {/* Allergy Section */}
+                      {clinicalSubMenu === "allergy" && (
+                        <div className="space-y-4">
+                          <div className="flex items-center justify-between mb-4">
+                            <h3 className="text-lg font-semibold text-slate-900">Allergy Information</h3>
+                            {hasPermission(PERMISSIONS.PATIENTS_CLINICAL_DATA_EDIT) && (
+                              <button className="rounded-lg bg-indigo-600 px-4 py-2 text-sm font-semibold text-white transition hover:bg-indigo-700">
+                                Add Allergy
+                              </button>
+                            )}
+                          </div>
+                          {patient.allergies && patient.allergies.length > 0 ? (
+                            <div className="space-y-2">
+                              {patient.allergies.map((allergy: string, idx: number) => (
+                                <div key={idx} className="rounded-lg border border-amber-200 bg-amber-50/50 p-4">
+                                  <div className="flex items-center justify-between">
+                                    <span className="font-medium text-amber-900">{allergy}</span>
+                                    <span className="rounded-full bg-amber-100 px-2.5 py-1 text-xs font-semibold text-amber-800">
+                                      Active
+                                    </span>
+                                  </div>
+                                </div>
+                              ))}
+                            </div>
+                          ) : (
+                            <div className="rounded-lg border border-slate-200 bg-slate-50/50 p-8 text-center">
+                              <p className="text-sm text-slate-600">No allergies recorded</p>
+                            </div>
+                          )}
+                          {clinicalData?.standalone?.[0]?.allergies && clinicalData.standalone[0].allergies.length > 0 && (
+                            <div className="mt-6">
+                              <h4 className="mb-3 text-base font-semibold text-slate-900">Allergy History</h4>
+                              <div className="space-y-2">
+                                {clinicalData.standalone[0].allergies.map((allergy: any, idx: number) => (
+                                  <div key={idx} className="rounded-lg border border-slate-200 bg-slate-50/50 p-4">
+                                    <div className="flex items-center justify-between mb-2">
+                                      <span className="font-medium text-slate-900">{allergy.allergen}</span>
+                                      <span className={`rounded-full px-2.5 py-1 text-xs font-semibold ${
+                                        allergy.severity === "life-threatening" ? "bg-rose-100 text-rose-800" :
+                                        allergy.severity === "severe" ? "bg-orange-100 text-orange-800" :
+                                        allergy.severity === "moderate" ? "bg-amber-100 text-amber-800" :
+                                        "bg-yellow-100 text-yellow-800"
+                                      }`}>
+                                        {allergy.severity}
+                                      </span>
+                                    </div>
+                                    {allergy.reaction && (
+                                      <p className="text-sm text-slate-700 mb-1">
+                                        <span className="font-medium">Reaction:</span> {allergy.reaction}
+                                      </p>
+                                    )}
+                                    <p className="text-xs text-slate-600">
+                                      First observed: {new Date(allergy.firstObserved).toLocaleDateString()}
+                                    </p>
+                                  </div>
+                                ))}
+                              </div>
+                            </div>
+                          )}
+                        </div>
+                      )}
+
+                      {/* Vitals Section */}
+                      {clinicalSubMenu === "vitals" && (
+                        <div className="space-y-4">
+                          <div className="flex items-center justify-between mb-4">
+                            <h3 className="text-lg font-semibold text-slate-900">Vital Signs</h3>
+                            {hasPermission(PERMISSIONS.PATIENTS_CLINICAL_DATA_EDIT) && (
+                              <button className="rounded-lg bg-indigo-600 px-4 py-2 text-sm font-semibold text-white transition hover:bg-indigo-700">
+                                Add Vitals
+                              </button>
+                            )}
+                          </div>
+                          {clinicalData?.standalone?.[0]?.vitalSigns && clinicalData.standalone[0].vitalSigns.length > 0 ? (
+                            <div className="space-y-3">
+                              {clinicalData.standalone[0].vitalSigns.map((vs: any, idx: number) => (
+                                <div key={idx} className="rounded-lg border border-slate-200 bg-slate-50/50 p-4">
+                                  <div className="flex items-center justify-between mb-3">
+                                    <span className="text-sm font-medium text-slate-900">
+                                      {new Date(vs.date).toLocaleDateString("en-US", {
+                                        month: "short",
+                                        day: "numeric",
+                                        year: "numeric",
+                                        hour: "2-digit",
+                                        minute: "2-digit",
+                                      })}
+                                    </span>
+                                    {vs.recordedBy && (
+                                      <span className="text-xs text-slate-600">
+                                        Recorded by: {vs.recordedBy?.name || "Unknown"}
+                                      </span>
+                                    )}
+                                  </div>
+                                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+                                    {vs.bloodPressure && (
+                                      <div className="bg-white rounded-lg p-3 border border-slate-200">
+                                        <p className="text-xs text-slate-600 mb-1">Blood Pressure</p>
+                                        <p className="text-base font-semibold text-slate-900">
+                                          {vs.bloodPressure.systolic}/{vs.bloodPressure.diastolic} mmHg
+                                        </p>
+                                      </div>
+                                    )}
+                                    {vs.temperature && (
+                                      <div className="bg-white rounded-lg p-3 border border-slate-200">
+                                        <p className="text-xs text-slate-600 mb-1">Temperature</p>
+                                        <p className="text-base font-semibold text-slate-900">
+                                          {vs.temperature.value}°{vs.temperature.unit === "celsius" ? "C" : "F"}
+                                        </p>
+                                      </div>
+                                    )}
+                                    {vs.pulse && (
+                                      <div className="bg-white rounded-lg p-3 border border-slate-200">
+                                        <p className="text-xs text-slate-600 mb-1">Pulse</p>
+                                        <p className="text-base font-semibold text-slate-900">{vs.pulse} bpm</p>
+                                      </div>
+                                    )}
+                                    {vs.respiratoryRate && (
+                                      <div className="bg-white rounded-lg p-3 border border-slate-200">
+                                        <p className="text-xs text-slate-600 mb-1">Respiratory Rate</p>
+                                        <p className="text-base font-semibold text-slate-900">{vs.respiratoryRate} /min</p>
+                                      </div>
+                                    )}
+                                    {vs.oxygenSaturation && (
+                                      <div className="bg-white rounded-lg p-3 border border-slate-200">
+                                        <p className="text-xs text-slate-600 mb-1">SpO2</p>
+                                        <p className="text-base font-semibold text-slate-900">{vs.oxygenSaturation}%</p>
+                                      </div>
+                                    )}
+                                  </div>
+                                </div>
+                              ))}
+                            </div>
+                          ) : (
+                            <div className="rounded-lg border border-slate-200 bg-slate-50/50 p-8 text-center">
+                              <p className="text-sm text-slate-600">No vital signs recorded yet</p>
+                            </div>
+                          )}
+                        </div>
+                      )}
+
+                      {/* Body Composition Section */}
+                      {clinicalSubMenu === "body-composition" && (
+                        <div className="space-y-4">
+                          <div className="flex items-center justify-between mb-4">
+                            <h3 className="text-lg font-semibold text-slate-900">Body Composition</h3>
+                            {hasPermission(PERMISSIONS.PATIENTS_CLINICAL_DATA_EDIT) && (
+                              <button className="rounded-lg bg-indigo-600 px-4 py-2 text-sm font-semibold text-white transition hover:bg-indigo-700">
+                                Add Measurement
+                              </button>
+                            )}
+                          </div>
+                          {clinicalData?.standalone?.[0]?.vitalSigns && clinicalData.standalone[0].vitalSigns.some((vs: any) => vs.weight || vs.height || vs.bmi) ? (
+                            <div className="space-y-3">
+                              {clinicalData.standalone[0].vitalSigns
+                                .filter((vs: any) => vs.weight || vs.height || vs.bmi)
+                                .map((vs: any, idx: number) => (
+                                  <div key={idx} className="rounded-lg border border-slate-200 bg-slate-50/50 p-4">
+                                    <div className="flex items-center justify-between mb-3">
+                                      <span className="text-sm font-medium text-slate-900">
+                                        {new Date(vs.date).toLocaleDateString()}
+                                      </span>
+                                    </div>
+                                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                                      {vs.weight && (
+                                        <div className="bg-white rounded-lg p-3 border border-slate-200">
+                                          <p className="text-xs text-slate-600 mb-1">Weight</p>
+                                          <p className="text-base font-semibold text-slate-900">
+                                            {vs.weight.value} {vs.weight.unit}
+                                          </p>
+                                        </div>
+                                      )}
+                                      {vs.height && (
+                                        <div className="bg-white rounded-lg p-3 border border-slate-200">
+                                          <p className="text-xs text-slate-600 mb-1">Height</p>
+                                          <p className="text-base font-semibold text-slate-900">
+                                            {vs.height.value} {vs.height.unit}
+                                          </p>
+                                        </div>
+                                      )}
+                                      {vs.bmi && (
+                                        <div className="bg-white rounded-lg p-3 border border-slate-200">
+                                          <p className="text-xs text-slate-600 mb-1">BMI</p>
+                                          <p className="text-base font-semibold text-slate-900">{vs.bmi.toFixed(1)}</p>
+                                        </div>
+                                      )}
+                                    </div>
+                                  </div>
+                                ))}
+                            </div>
+                          ) : (
+                            <div className="rounded-lg border border-slate-200 bg-slate-50/50 p-8 text-center">
+                              <p className="text-sm text-slate-600">No body composition data recorded yet</p>
+                            </div>
+                          )}
+                        </div>
+                      )}
+
+                      {/* Track Parameters Section */}
+                      {clinicalSubMenu === "track-parameters" && (
+                        <div className="space-y-4">
+                          <div className="flex items-center justify-between mb-4">
+                            <h3 className="text-lg font-semibold text-slate-900">Track Parameters</h3>
+                            {hasPermission(PERMISSIONS.PATIENTS_CLINICAL_DATA_EDIT) && (
+                              <button className="rounded-lg bg-indigo-600 px-4 py-2 text-sm font-semibold text-white transition hover:bg-indigo-700">
+                                Add Parameter
+                              </button>
+                            )}
+                          </div>
+                          {clinicalData?.standalone?.[0]?.trackParameters && clinicalData.standalone[0].trackParameters.length > 0 ? (
+                            <div className="space-y-3">
+                              {clinicalData.standalone[0].trackParameters.map((param: any, idx: number) => (
+                                <div key={idx} className="rounded-lg border border-slate-200 bg-slate-50/50 p-4">
+                                  <div className="flex items-center justify-between mb-2">
+                                    <span className="font-medium text-slate-900">{param.parameterName}</span>
+                                    <span className={`rounded-full px-2.5 py-1 text-xs font-semibold ${
+                                      param.status === "critical" ? "bg-rose-100 text-rose-800" :
+                                      param.status === "abnormal" ? "bg-amber-100 text-amber-800" :
+                                      "bg-green-100 text-green-800"
+                                    }`}>
+                                      {param.status}
+                                    </span>
+                                  </div>
+                                  <div className="flex items-center gap-4 mt-2">
+                                    <span className="text-base font-semibold text-slate-900">
+                                      {param.value} {param.unit || ""}
+                                    </span>
+                                    {param.normalRange && (
+                                      <span className="text-xs text-slate-600">
+                                        Normal: {param.normalRange}
+                                      </span>
+                                    )}
+                                  </div>
+                                  {param.notes && (
+                                    <p className="text-sm text-slate-700 mt-2">{param.notes}</p>
+                                  )}
+                                  <p className="text-xs text-slate-600 mt-2">
+                                    {new Date(param.date).toLocaleDateString()}
+                                  </p>
+                                </div>
+                              ))}
+                            </div>
+                          ) : (
+                            <div className="rounded-lg border border-slate-200 bg-slate-50/50 p-8 text-center">
+                              <p className="text-sm text-slate-600">No tracked parameters recorded yet</p>
+                            </div>
+                          )}
+                        </div>
+                      )}
+
+                      {/* Diagnosis Section */}
+                      {clinicalSubMenu === "diagnosis" && (
+                        <div className="space-y-4">
+                          <div className="flex items-center justify-between mb-4">
+                            <h3 className="text-lg font-semibold text-slate-900">Diagnosis</h3>
+                            {hasPermission(PERMISSIONS.PATIENTS_CLINICAL_DATA_EDIT) && (
+                              <button className="rounded-lg bg-indigo-600 px-4 py-2 text-sm font-semibold text-white transition hover:bg-indigo-700">
+                                Add Diagnosis
+                              </button>
+                            )}
+                          </div>
+                          {clinicalData?.standalone?.[0]?.diagnoses && clinicalData.standalone[0].diagnoses.length > 0 ? (
+                            <div className="space-y-3">
+                              {clinicalData.standalone[0].diagnoses.map((diag: any, idx: number) => (
+                                <div key={idx} className="rounded-lg border border-slate-200 bg-slate-50/50 p-4">
+                                  <div className="flex items-center justify-between mb-2">
+                                    <div className="flex-1">
+                                      <span className="font-medium text-slate-900">{diag.diagnosis}</span>
+                                      {diag.icdCode && (
+                                        <span className="ml-2 text-xs text-slate-600">(ICD: {diag.icdCode})</span>
+                                      )}
+                                    </div>
+                                    <span className={`rounded-full px-2.5 py-1 text-xs font-semibold ${
+                                      diag.status === "active" ? "bg-blue-100 text-blue-800" :
+                                      diag.status === "resolved" ? "bg-green-100 text-green-800" :
+                                      diag.status === "chronic" ? "bg-amber-100 text-amber-800" :
+                                      "bg-slate-100 text-slate-800"
+                                    }`}>
+                                      {diag.status}
+                                    </span>
+                                  </div>
+                                  <div className="flex items-center gap-2 mt-2">
+                                    <span className="text-xs text-slate-600">Type: {diag.type}</span>
+                                    <span className="text-xs text-slate-400">•</span>
+                                    <span className="text-xs text-slate-600">
+                                      {new Date(diag.date).toLocaleDateString()}
+                                    </span>
+                                    {diag.diagnosedBy && (
+                                      <>
+                                        <span className="text-xs text-slate-400">•</span>
+                                        <span className="text-xs text-slate-600">
+                                          Dr. {diag.diagnosedBy?.name || "Unknown"}
+                                        </span>
+                                      </>
+                                    )}
+                                  </div>
+                                  {diag.notes && (
+                                    <p className="text-sm text-slate-700 mt-2">{diag.notes}</p>
+                                  )}
+                                </div>
+                              ))}
+                            </div>
+                          ) : (
+                            <div className="rounded-lg border border-slate-200 bg-slate-50/50 p-8 text-center">
+                              <p className="text-sm text-slate-600">No diagnosis recorded yet</p>
+                              <p className="text-xs text-slate-500 mt-2">
+                                Diagnosis from OPD and IPD records will appear here
+                              </p>
+                            </div>
+                          )}
+                          {/* Show diagnosis from OPD/IPD */}
+                          {(clinicalData?.fromOPD?.some((opd: any) => opd.diagnosis) || clinicalData?.fromIPD?.some((ipd: any) => ipd.diagnosisOnAdmission)) && (
+                            <div className="mt-6">
+                              <h4 className="mb-3 text-base font-semibold text-slate-900">From OPD/IPD Records</h4>
+                              <div className="space-y-2">
+                                {clinicalData.fromOPD?.filter((opd: any) => opd.diagnosis).map((opd: any, idx: number) => (
+                                  <div key={`opd-${idx}`} className="rounded-lg border border-indigo-200 bg-indigo-50/50 p-3">
+                                    <div className="flex items-center justify-between">
+                                      <span className="font-medium text-slate-900">{opd.diagnosis}</span>
+                                      <span className="text-xs text-slate-600">OPD: {opd.opdNumber || "N/A"}</span>
+                                    </div>
+                                    <p className="text-xs text-slate-600 mt-1">
+                                      {new Date(opd.visitDate).toLocaleDateString()}
+                                    </p>
+                                  </div>
+                                ))}
+                                {clinicalData.fromIPD?.filter((ipd: any) => ipd.diagnosisOnAdmission).map((ipd: any, idx: number) => (
+                                  <div key={`ipd-${idx}`} className="rounded-lg border border-purple-200 bg-purple-50/50 p-3">
+                                    <div className="flex items-center justify-between">
+                                      <span className="font-medium text-slate-900">{ipd.diagnosisOnAdmission}</span>
+                                      <span className="text-xs text-slate-600">IPD: {ipd.ipdNumber || "N/A"}</span>
+                                    </div>
+                                    <p className="text-xs text-slate-600 mt-1">
+                                      {new Date(ipd.admissionDate).toLocaleDateString()}
+                                    </p>
+                                  </div>
+                                ))}
+                              </div>
+                            </div>
+                          )}
+                        </div>
+                      )}
+
+                      {/* Reports Section */}
+                      {clinicalSubMenu === "reports" && (
+                        <div className="space-y-4">
+                          <div className="flex items-center justify-between mb-4">
+                            <h3 className="text-lg font-semibold text-slate-900">Reports</h3>
+                            {hasPermission(PERMISSIONS.PATIENTS_CLINICAL_DATA_EDIT) && (
+                              <button className="rounded-lg bg-indigo-600 px-4 py-2 text-sm font-semibold text-white transition hover:bg-indigo-700">
+                                Add Report
+                              </button>
+                            )}
+                          </div>
+                          <div className="space-y-6">
+                            {/* Lab Results */}
+                            {(clinicalData?.standalone?.[0]?.labResults?.length > 0 || clinicalData?.fromOPD?.some((opd: any) => opd.labTests?.length > 0) || clinicalData?.fromIPD?.some((ipd: any) => ipd.labReports?.length > 0)) && (
+                              <div>
+                                <h4 className="mb-3 text-base font-semibold text-slate-900">Lab Results</h4>
+                                <div className="space-y-2">
+                                  {clinicalData?.standalone?.[0]?.labResults?.map((lab: any, idx: number) => (
+                                    <div key={idx} className="rounded-lg border border-slate-200 bg-slate-50/50 p-4">
+                                      <div className="flex items-center justify-between mb-2">
+                                        <span className="font-medium text-slate-900">{lab.testName}</span>
+                                        <span className={`rounded-full px-2.5 py-1 text-xs font-semibold ${
+                                          lab.status === "critical" ? "bg-rose-100 text-rose-800" :
+                                          lab.status === "abnormal" ? "bg-amber-100 text-amber-800" :
+                                          lab.status === "normal" ? "bg-green-100 text-green-800" :
+                                          "bg-slate-100 text-slate-800"
+                                        }`}>
+                                          {lab.status}
+                                        </span>
+                                      </div>
+                                      {lab.results && (
+                                        <p className="text-sm text-slate-700 mb-1">{lab.results}</p>
+                                      )}
+                                      {lab.normalRange && (
+                                        <p className="text-xs text-slate-600 mb-1">Normal Range: {lab.normalRange}</p>
+                                      )}
+                                      <div className="flex items-center gap-2 mt-2">
+                                        <span className="text-xs text-slate-600">
+                                          {new Date(lab.testDate).toLocaleDateString()}
+                                        </span>
+                                        {lab.fileUrl && (
+                                          <a
+                                            href={`http://localhost:5000${lab.fileUrl}`}
+                                            target="_blank"
+                                            rel="noopener noreferrer"
+                                            className="text-xs text-indigo-600 hover:text-indigo-700"
+                                          >
+                                            View Report
+                                          </a>
+                                        )}
+                                      </div>
+                                    </div>
+                                  ))}
+                                </div>
+                              </div>
+                            )}
+
+                            {/* Imaging Reports */}
+                            {clinicalData?.standalone?.[0]?.imagingReports && clinicalData.standalone[0].imagingReports.length > 0 && (
+                              <div>
+                                <h4 className="mb-3 text-base font-semibold text-slate-900">Imaging Reports</h4>
+                                <div className="space-y-2">
+                                  {clinicalData.standalone[0].imagingReports.map((img: any, idx: number) => (
+                                    <div key={idx} className="rounded-lg border border-slate-200 bg-slate-50/50 p-4">
+                                      <div className="flex items-center justify-between mb-2">
+                                        <div>
+                                          <span className="font-medium text-slate-900">{img.reportName}</span>
+                                          <span className="ml-2 text-xs text-slate-600">({img.imagingType})</span>
+                                        </div>
+                                        <span className="text-xs text-slate-600">
+                                          {new Date(img.reportDate).toLocaleDateString()}
+                                        </span>
+                                      </div>
+                                      {img.bodyPart && (
+                                        <p className="text-sm text-slate-700 mb-1">
+                                          <span className="font-medium">Body Part:</span> {img.bodyPart}
+                                        </p>
+                                      )}
+                                      {img.findings && (
+                                        <p className="text-sm text-slate-700 mb-1">
+                                          <span className="font-medium">Findings:</span> {img.findings}
+                                        </p>
+                                      )}
+                                      {img.impression && (
+                                        <p className="text-sm text-slate-700 mb-1">
+                                          <span className="font-medium">Impression:</span> {img.impression}
+                                        </p>
+                                      )}
+                                      {img.fileUrl && (
+                                        <a
+                                          href={`http://localhost:5000${img.fileUrl}`}
+                                          target="_blank"
+                                          rel="noopener noreferrer"
+                                          className="text-xs text-indigo-600 hover:text-indigo-700 mt-2 inline-block"
+                                        >
+                                          View Report
+                                        </a>
+                                      )}
+                                    </div>
+                                  ))}
+                                </div>
+                              </div>
+                            )}
+
+                            {(!clinicalData?.standalone?.[0]?.labResults?.length && !clinicalData?.standalone?.[0]?.imagingReports?.length) && (
+                              <div className="rounded-lg border border-slate-200 bg-slate-50/50 p-8 text-center">
+                                <p className="text-sm text-slate-600">No reports available yet</p>
+                              </div>
+                            )}
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  )}
+                </div>
               </div>
             </div>
           )}

@@ -332,13 +332,16 @@ function DoctorSchedules() {
                 </div>
                 <div className="p-4 sm:p-6">
                   <div className="space-y-4">
-                    {days.map((day) => (
+                    {days.map((day) => {
+                      const daySchedule = schedule?.[day.key as keyof Schedule];
+                      if (!daySchedule) return null;
+                      return (
                       <div key={day.key} className="rounded-lg border border-slate-200 p-4">
                         <div className="mb-3 flex items-center justify-between">
                           <label className="flex items-center gap-2">
                             <input
                               type="checkbox"
-                              checked={schedule[day.key].isAvailable}
+                              checked={daySchedule.isAvailable || false}
                               onChange={(e) => handleScheduleChange(day.key, "isAvailable", e.target.checked)}
                               disabled={!hasPermission(PERMISSIONS.APPOINTMENTS_EDIT)}
                               className="h-4 w-4 rounded border-slate-300 text-indigo-600 focus:ring-indigo-500"
@@ -346,14 +349,14 @@ function DoctorSchedules() {
                             <span className="text-sm font-semibold text-slate-900">{day.label}</span>
                           </label>
                         </div>
-                        {schedule[day.key].isAvailable && (
+                        {daySchedule.isAvailable && (
                           <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
                             <div>
                               <label className="block text-xs font-medium text-slate-700 mb-1">Morning Slot</label>
                               <div className="flex gap-2">
                                 <input
                                   type="time"
-                                  value={schedule[day.key].morningSlot?.startTime || ""}
+                                  value={daySchedule.morningSlot?.startTime || ""}
                                   onChange={(e) => handleSlotChange(day.key, "morningSlot", "startTime", e.target.value)}
                                   disabled={!hasPermission(PERMISSIONS.APPOINTMENTS_EDIT)}
                                   className="flex-1 rounded-lg border border-slate-300 px-2 py-1 text-xs focus:border-indigo-500 focus:outline-none focus:ring-2 focus:ring-indigo-200 disabled:opacity-50"
@@ -361,7 +364,7 @@ function DoctorSchedules() {
                                 <span className="self-center text-xs text-slate-500">to</span>
                                 <input
                                   type="time"
-                                  value={schedule[day.key].morningSlot?.endTime || ""}
+                                  value={daySchedule.morningSlot?.endTime || ""}
                                   onChange={(e) => handleSlotChange(day.key, "morningSlot", "endTime", e.target.value)}
                                   disabled={!hasPermission(PERMISSIONS.APPOINTMENTS_EDIT)}
                                   className="flex-1 rounded-lg border border-slate-300 px-2 py-1 text-xs focus:border-indigo-500 focus:outline-none focus:ring-2 focus:ring-indigo-200 disabled:opacity-50"
@@ -373,7 +376,7 @@ function DoctorSchedules() {
                               <div className="flex gap-2">
                                 <input
                                   type="time"
-                                  value={schedule[day.key].eveningSlot?.startTime || ""}
+                                  value={daySchedule.eveningSlot?.startTime || ""}
                                   onChange={(e) => handleSlotChange(day.key, "eveningSlot", "startTime", e.target.value)}
                                   disabled={!hasPermission(PERMISSIONS.APPOINTMENTS_EDIT)}
                                   className="flex-1 rounded-lg border border-slate-300 px-2 py-1 text-xs focus:border-indigo-500 focus:outline-none focus:ring-2 focus:ring-indigo-200 disabled:opacity-50"
@@ -381,7 +384,7 @@ function DoctorSchedules() {
                                 <span className="self-center text-xs text-slate-500">to</span>
                                 <input
                                   type="time"
-                                  value={schedule[day.key].eveningSlot?.endTime || ""}
+                                  value={daySchedule.eveningSlot?.endTime || ""}
                                   onChange={(e) => handleSlotChange(day.key, "eveningSlot", "endTime", e.target.value)}
                                   disabled={!hasPermission(PERMISSIONS.APPOINTMENTS_EDIT)}
                                   className="flex-1 rounded-lg border border-slate-300 px-2 py-1 text-xs focus:border-indigo-500 focus:outline-none focus:ring-2 focus:ring-indigo-200 disabled:opacity-50"
@@ -391,7 +394,8 @@ function DoctorSchedules() {
                           </div>
                         )}
                       </div>
-                    ))}
+                      );
+                    })}
                   </div>
                 </div>
               </div>
