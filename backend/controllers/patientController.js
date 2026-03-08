@@ -28,17 +28,44 @@ export const getPatients = async (req, res) => {
     const { status, isActive, search } = req.query;
 
     const query = {};
-    if (status) query.status = status;
+    
+    // Handle status filter - include patients without status field (default to "active")
+    if (status) {
+      if (status === "active") {
+        // For "active" status, include patients with status="active" OR no status field
+        query.$or = [
+          { status: "active" },
+          { status: { $exists: false } },
+          { status: null },
+        ];
+      } else {
+        // For other statuses, only match exact status
+        query.status = status;
+      }
+    }
+    
     if (isActive !== undefined) query.isActive = isActive === "true";
 
     // Search functionality
     if (search) {
-      query.$or = [
-        { name: { $regex: search, $options: "i" } },
-        { patientId: { $regex: search, $options: "i" } },
-        { phone: { $regex: search, $options: "i" } },
-        { email: { $regex: search, $options: "i" } },
+      const searchQuery = { $regex: search, $options: "i" };
+      const searchConditions = [
+        { name: searchQuery },
+        { patientId: searchQuery },
+        { phone: searchQuery },
+        { email: searchQuery },
       ];
+      
+      if (query.$or) {
+        // If we already have $or for status, combine with $and
+        query.$and = [
+          { $or: query.$or },
+          { $or: searchConditions },
+        ];
+        delete query.$or;
+      } else {
+        query.$or = searchConditions;
+      }
     }
 
     const patients = await Patient.find(query)

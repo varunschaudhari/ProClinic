@@ -186,6 +186,17 @@ export const patientsAPI = {
     return response.json();
   },
 
+  updateStatus: async (
+    id: string,
+    statusData: { status: string; statusNotes?: string }
+  ) => {
+    const response = await apiRequest(`/patients/${id}/status`, {
+      method: "PATCH",
+      body: JSON.stringify(statusData),
+    });
+    return response.json();
+  },
+
   delete: async (id: string) => {
     const response = await apiRequest(`/patients/${id}`, {
       method: "DELETE",

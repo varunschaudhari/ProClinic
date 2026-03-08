@@ -9,7 +9,8 @@
     "start": "node server.js",
     "seed": "node scripts/seedData.js",
     "seed:users": "node scripts/seedUser.js",
-    "seed:roles": "node scripts/seedRoles.js"
+    "seed:roles": "node scripts/seedRoles.js",
+    "migrate:patient-status": "node scripts/migratePatientStatus.js"
   },
   "keywords": [
     "clinic",

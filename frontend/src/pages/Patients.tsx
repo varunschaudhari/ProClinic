@@ -125,8 +125,9 @@ function Patients() {
 
   // Filter patients based on search query and status
   const filteredPatients = patients.filter((patient) => {
-    // Status filter
-    if (statusFilter && patient.status !== statusFilter) {
+    // Status filter - handle patients without status field (default to "active")
+    const patientStatus = patient.status || "active";
+    if (statusFilter && patientStatus !== statusFilter) {
       return false;
     }
     // Search query filter
@@ -343,6 +344,53 @@ function Patients() {
       age--;
     }
     return age;
+  };
+
+  const getStatusColor = (status: string) => {
+    switch (status) {
+      case "active":
+        return "bg-emerald-50 text-emerald-700 border-emerald-200";
+      case "inactive":
+        return "bg-slate-50 text-slate-700 border-slate-200";
+      case "discharged":
+        return "bg-blue-50 text-blue-700 border-blue-200";
+      case "transferred":
+        return "bg-amber-50 text-amber-700 border-amber-200";
+      case "deceased":
+        return "bg-red-50 text-red-700 border-red-200";
+      case "absconded":
+        return "bg-orange-50 text-orange-700 border-orange-200";
+      case "on-leave":
+        return "bg-purple-50 text-purple-700 border-purple-200";
+      case "follow-up":
+        return "bg-indigo-50 text-indigo-700 border-indigo-200";
+      default:
+        return "bg-slate-50 text-slate-700 border-slate-200";
+    }
+  };
+
+  const handleStatusUpdate = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!selectedPatient) return;
+
+    try {
+      const response = await patientsAPI.updateStatus(selectedPatient._id, {
+        status: statusFormData.status,
+        statusNotes: statusFormData.statusNotes || undefined,
+      });
+
+      if (response.success) {
+        showSuccess("Patient status updated successfully");
+        setShowStatusModal(false);
+        setSelectedPatient(null);
+        fetchPatients();
+      } else {
+        showError(response.message || "Failed to update patient status");
+      }
+    } catch (err: any) {
+      console.error("Error updating patient status:", err);
+      showError(err.message || "Failed to update patient status");
+    }
   };
 
   if (loading) {
@@ -618,10 +666,10 @@ function Patients() {
                         <td className="hidden whitespace-nowrap px-4 py-3 lg:table-cell sm:px-6 sm:py-4">
                           <span
                             className={`inline-flex rounded-lg border px-2 py-1 text-[10px] font-semibold capitalize sm:text-xs ${getStatusColor(
-                              patient.status
+                              patient.status || "active"
                             )}`}
                           >
-                            {patient.status.replace("-", " ")}
+                            {(patient.status || "active").replace("-", " ")}
                           </span>
                         </td>
                         <td className="whitespace-nowrap px-4 py-3 text-right sm:px-6 sm:py-4">
@@ -632,7 +680,7 @@ function Patients() {
                                   e.stopPropagation();
                                   setSelectedPatient(patient);
                                   setStatusFormData({
-                                    status: patient.status,
+                                    status: patient.status || "active",
                                     statusNotes: patient.statusNotes || "",
                                   });
                                   setShowStatusModal(true);
