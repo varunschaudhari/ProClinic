@@ -144,8 +144,13 @@ export const rolesAPI = {
 
 // Patients API
 export const patientsAPI = {
-  getAll: async () => {
-    const response = await apiRequest("/patients");
+  getAll: async (params?: { status?: string; isActive?: boolean; search?: string }) => {
+    const queryParams = new URLSearchParams();
+    if (params?.status) queryParams.append("status", params.status);
+    if (params?.isActive !== undefined) queryParams.append("isActive", params.isActive.toString());
+    if (params?.search) queryParams.append("search", params.search);
+    const queryString = queryParams.toString();
+    const response = await apiRequest(`/patients${queryString ? `?${queryString}` : ""}`);
     return response.json();
   },
 

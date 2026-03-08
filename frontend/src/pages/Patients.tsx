@@ -33,6 +33,13 @@ type Patient = {
   allergies?: string[];
   tags?: string[];
   profileImage?: string | null;
+  status: string;
+  statusNotes?: string | null;
+  statusChangedDate?: string | null;
+  statusChangedBy?: {
+    _id: string;
+    name: string;
+  };
   isActive: boolean;
   createdAt: string;
 };
@@ -108,9 +115,21 @@ function Patients() {
   const cityDropdownRef = useRef<HTMLDivElement>(null);
   const stateDropdownRef = useRef<HTMLDivElement>(null);
   const [searchQuery, setSearchQuery] = useState("");
+  const [statusFilter, setStatusFilter] = useState("");
+  const [showStatusModal, setShowStatusModal] = useState(false);
+  const [selectedPatient, setSelectedPatient] = useState<Patient | null>(null);
+  const [statusFormData, setStatusFormData] = useState({
+    status: "",
+    statusNotes: "",
+  });
 
-  // Filter patients based on search query
+  // Filter patients based on search query and status
   const filteredPatients = patients.filter((patient) => {
+    // Status filter
+    if (statusFilter && patient.status !== statusFilter) {
+      return false;
+    }
+    // Search query filter
     if (!searchQuery.trim()) {
       return true;
     }
@@ -144,7 +163,9 @@ function Patients() {
   const fetchPatients = async () => {
     try {
       setLoading(true);
-      const response = await patientsAPI.getAll();
+      const params: any = {};
+      if (statusFilter) params.status = statusFilter;
+      const response = await patientsAPI.getAll(params);
       if (response.success) {
         setPatients(response.data.patients);
       } else {
@@ -157,6 +178,10 @@ function Patients() {
       setLoading(false);
     }
   };
+
+  useEffect(() => {
+    fetchPatients();
+  }, [statusFilter]);
 
   const handleOpenModal = () => {
     setFormData({
@@ -361,8 +386,8 @@ function Patients() {
 
         {/* Main Content */}
         <main className="flex-1 px-4 py-6 sm:px-6 sm:py-8 lg:px-8">
-          {/* Search Bar */}
-          <div className="mb-4 sm:mb-6">
+          {/* Search and Filter Bar */}
+          <div className="mb-4 sm:mb-6 grid grid-cols-1 gap-4 sm:grid-cols-2">
             <div className="relative">
               <div className="pointer-events-none absolute inset-y-0 left-0 flex items-center pl-3">
                 <svg
@@ -407,14 +432,31 @@ function Patients() {
                 </button>
               )}
             </div>
-            {searchQuery && (
-              <p className="mt-2 text-xs text-slate-500">
-                {filteredPatients.length === 0
-                  ? "No patients found"
-                  : `Found ${filteredPatients.length} patient${filteredPatients.length !== 1 ? "s" : ""}`}
-              </p>
-            )}
+            <div>
+              <select
+                value={statusFilter}
+                onChange={(e) => setStatusFilter(e.target.value)}
+                className="w-full rounded-xl border border-slate-300 bg-white py-2.5 px-3 text-sm text-slate-900 focus:border-indigo-500 focus:outline-none focus:ring-2 focus:ring-indigo-200 sm:py-3"
+              >
+                <option value="">All Status</option>
+                <option value="active">Active</option>
+                <option value="inactive">Inactive</option>
+                <option value="discharged">Discharged</option>
+                <option value="transferred">Transferred</option>
+                <option value="deceased">Deceased</option>
+                <option value="absconded">Absconded</option>
+                <option value="on-leave">On Leave</option>
+                <option value="follow-up">Follow-up</option>
+              </select>
+            </div>
           </div>
+          {(searchQuery || statusFilter) && (
+            <p className="mb-4 text-xs text-slate-500">
+              {filteredPatients.length === 0
+                ? "No patients found"
+                : `Found ${filteredPatients.length} patient${filteredPatients.length !== 1 ? "s" : ""}`}
+            </p>
+          )}
 
           {/* Patients Table */}
           <div className="overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm">
@@ -437,15 +479,18 @@ function Patients() {
                     <th className="hidden px-4 py-3 text-left text-xs font-bold uppercase tracking-wider text-slate-600 lg:table-cell sm:px-6 sm:py-4">
                       Blood Group
                     </th>
+                    <th className="hidden px-4 py-3 text-left text-xs font-bold uppercase tracking-wider text-slate-600 lg:table-cell sm:px-6 sm:py-4">
+                      Status
+                    </th>
                     <th className="px-4 py-3 text-right text-xs font-bold uppercase tracking-wider text-slate-600 sm:px-6 sm:py-4">
                       Actions
                     </th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-100 bg-white">
-                  {filteredPatients.length === 0 && !searchQuery ? (
+                  {filteredPatients.length === 0 && !searchQuery && !statusFilter ? (
                     <tr>
-                      <td colSpan={6} className="px-6 py-16 text-center">
+                      <td colSpan={7} className="px-6 py-16 text-center">
                         <div className="flex flex-col items-center justify-center">
                           <svg
                             className="mb-4 h-12 w-12 text-slate-400"
@@ -469,9 +514,9 @@ function Patients() {
                         </div>
                       </td>
                     </tr>
-                  ) : filteredPatients.length === 0 && searchQuery ? (
+                  ) : filteredPatients.length === 0 && (searchQuery || statusFilter) ? (
                     <tr>
-                      <td colSpan={6} className="px-6 py-16 text-center">
+                      <td colSpan={7} className="px-6 py-16 text-center">
                         <div className="flex flex-col items-center justify-center">
                           <svg
                             className="mb-4 h-12 w-12 text-slate-400"
@@ -570,16 +615,44 @@ function Patients() {
                             <span className="text-xs text-slate-400">-</span>
                           )}
                         </td>
-                        <td className="whitespace-nowrap px-4 py-3 text-right sm:px-6 sm:py-4">
-                          <button
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              navigate(`/patients/${patient._id}`);
-                            }}
-                            className="rounded-lg border border-indigo-200 bg-indigo-50 px-2 py-1 text-[10px] font-semibold text-indigo-700 transition hover:border-indigo-300 hover:bg-indigo-100 sm:px-3 sm:py-1.5 sm:text-xs"
+                        <td className="hidden whitespace-nowrap px-4 py-3 lg:table-cell sm:px-6 sm:py-4">
+                          <span
+                            className={`inline-flex rounded-lg border px-2 py-1 text-[10px] font-semibold capitalize sm:text-xs ${getStatusColor(
+                              patient.status
+                            )}`}
                           >
-                            View
-                          </button>
+                            {patient.status.replace("-", " ")}
+                          </span>
+                        </td>
+                        <td className="whitespace-nowrap px-4 py-3 text-right sm:px-6 sm:py-4">
+                          <div className="flex items-center justify-end gap-2">
+                            {hasPermission(PERMISSIONS.PATIENTS_EDIT) && (
+                              <button
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  setSelectedPatient(patient);
+                                  setStatusFormData({
+                                    status: patient.status,
+                                    statusNotes: patient.statusNotes || "",
+                                  });
+                                  setShowStatusModal(true);
+                                }}
+                                className="rounded-lg border border-slate-200 bg-slate-50 px-2 py-1 text-[10px] font-semibold text-slate-700 transition hover:border-slate-300 hover:bg-slate-100 sm:px-3 sm:py-1.5 sm:text-xs"
+                                title="Update Status"
+                              >
+                                Status
+                              </button>
+                            )}
+                            <button
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                navigate(`/patients/${patient._id}`);
+                              }}
+                              className="rounded-lg border border-indigo-200 bg-indigo-50 px-2 py-1 text-[10px] font-semibold text-indigo-700 transition hover:border-indigo-300 hover:bg-indigo-100 sm:px-3 sm:py-1.5 sm:text-xs"
+                            >
+                              View
+                            </button>
+                          </div>
                         </td>
                       </tr>
                     ))
@@ -1064,6 +1137,81 @@ function Patients() {
                   className="w-full rounded-lg bg-indigo-700 px-4 py-2 text-sm font-semibold text-white transition hover:bg-indigo-800 disabled:cursor-not-allowed disabled:opacity-50 sm:w-auto"
                 >
                   {isSubmitting ? "Creating..." : "Create Patient"}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* Update Status Modal */}
+      {showStatusModal && selectedPatient && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
+          <div className="w-full max-w-md rounded-xl border border-slate-200 bg-white shadow-xl">
+            <div className="px-4 py-3 sm:px-6 sm:py-4 border-b border-slate-200">
+              <h2 className="text-base font-semibold text-slate-900 sm:text-lg">
+                Update Patient Status
+              </h2>
+              <p className="mt-1 text-xs text-slate-600 sm:text-sm">
+                {selectedPatient.name} ({selectedPatient.patientId})
+              </p>
+            </div>
+            <form onSubmit={handleStatusUpdate} className="px-4 py-4 sm:px-6 sm:pb-6">
+              <div className="space-y-4">
+                <div>
+                  <label className="block text-sm font-medium text-slate-700 mb-2">
+                    Status *
+                  </label>
+                  <select
+                    required
+                    value={statusFormData.status}
+                    onChange={(e) =>
+                      setStatusFormData({ ...statusFormData, status: e.target.value })
+                    }
+                    className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:border-indigo-500 focus:outline-none focus:ring-2 focus:ring-indigo-200"
+                  >
+                    <option value="active">Active</option>
+                    <option value="inactive">Inactive</option>
+                    <option value="discharged">Discharged</option>
+                    <option value="transferred">Transferred</option>
+                    <option value="deceased">Deceased</option>
+                    <option value="absconded">Absconded</option>
+                    <option value="on-leave">On Leave</option>
+                    <option value="follow-up">Follow-up</option>
+                  </select>
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-slate-700 mb-2">
+                    Status Notes
+                  </label>
+                  <textarea
+                    value={statusFormData.statusNotes}
+                    onChange={(e) =>
+                      setStatusFormData({ ...statusFormData, statusNotes: e.target.value })
+                    }
+                    rows={3}
+                    className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:border-indigo-500 focus:outline-none focus:ring-2 focus:ring-indigo-200"
+                    placeholder="Optional notes about the status change..."
+                  />
+                </div>
+              </div>
+              <div className="mt-6 flex gap-3">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setShowStatusModal(false);
+                    setSelectedPatient(null);
+                    setStatusFormData({ status: "", statusNotes: "" });
+                  }}
+                  className="flex-1 rounded-lg border border-slate-300 bg-white px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  className="flex-1 rounded-lg bg-indigo-700 px-4 py-2 text-sm font-medium text-white hover:bg-indigo-800"
+                >
+                  Update Status
                 </button>
               </div>
             </form>

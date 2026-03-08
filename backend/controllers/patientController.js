@@ -25,7 +25,24 @@ const getPatientCount = async () => {
 // @access  Private
 export const getPatients = async (req, res) => {
   try {
-    const patients = await Patient.find()
+    const { status, isActive, search } = req.query;
+
+    const query = {};
+    if (status) query.status = status;
+    if (isActive !== undefined) query.isActive = isActive === "true";
+
+    // Search functionality
+    if (search) {
+      query.$or = [
+        { name: { $regex: search, $options: "i" } },
+        { patientId: { $regex: search, $options: "i" } },
+        { phone: { $regex: search, $options: "i" } },
+        { email: { $regex: search, $options: "i" } },
+      ];
+    }
+
+    const patients = await Patient.find(query)
+      .populate("statusChangedBy", "name email")
       .sort({ createdAt: -1 });
 
     // Get patient count from sequence
@@ -35,6 +52,7 @@ export const getPatients = async (req, res) => {
       userId: req.user.id,
       count: patients.length,
       patientCount: patientCount,
+      filters: { status, isActive, search },
     });
 
     res.status(200).json({
@@ -59,7 +77,8 @@ export const getPatients = async (req, res) => {
 // @access  Private
 export const getPatient = async (req, res) => {
   try {
-    const patient = await Patient.findById(req.params.id);
+    const patient = await Patient.findById(req.params.id)
+      .populate("statusChangedBy", "name email");
 
     if (!patient) {
       return res.status(404).json({
@@ -286,6 +305,8 @@ export const updatePatient = async (req, res) => {
       allergies,
       chronicConditions,
       notes,
+      status,
+      statusNotes,
       isActive,
     } = req.body;
 
@@ -347,6 +368,16 @@ export const updatePatient = async (req, res) => {
     if (medicalHistory !== undefined) patient.medicalHistory = medicalHistory || null;
     if (notes !== undefined) patient.notes = notes || null;
     if (isActive !== undefined) patient.isActive = isActive;
+
+    // Handle status update
+    if (status && status !== patient.status) {
+      patient.status = status;
+      patient.statusChangedDate = new Date();
+      patient.statusChangedBy = req.user.id;
+      if (statusNotes !== undefined) patient.statusNotes = statusNotes || null;
+    } else if (statusNotes !== undefined) {
+      patient.statusNotes = statusNotes || null;
+    }
 
     // Parse nested objects from FormData
     let addressObj = null;
@@ -480,6 +511,76 @@ export const deletePatient = async (req, res) => {
       deletedBy: req.user?.id,
       patientId: req.params.id,
     });
+    res.status(500).json({
+      success: false,
+      message: "Server error. Please try again later.",
+    });
+  }
+};
+
+// @desc    Update patient status
+// @route   PATCH /api/patients/:id/status
+// @access  Private
+export const updatePatientStatus = async (req, res) => {
+  try {
+    const { status, statusNotes } = req.body;
+
+    if (!status) {
+      return res.status(400).json({
+        success: false,
+        message: "Status is required",
+      });
+    }
+
+    const validStatuses = ["active", "inactive", "discharged", "transferred", "deceased", "absconded", "on-leave", "follow-up"];
+    if (!validStatuses.includes(status)) {
+      return res.status(400).json({
+        success: false,
+        message: `Invalid status. Must be one of: ${validStatuses.join(", ")}`,
+      });
+    }
+
+    const patient = await Patient.findById(req.params.id);
+
+    if (!patient) {
+      return res.status(404).json({
+        success: false,
+        message: "Patient not found",
+      });
+    }
+
+    const oldStatus = patient.status;
+    patient.status = status;
+    patient.statusChangedDate = new Date();
+    patient.statusChangedBy = req.user.id;
+    if (statusNotes !== undefined) patient.statusNotes = statusNotes || null;
+
+    await patient.save();
+
+    logInfo("Patient status updated", {
+      updatedBy: req.user.id,
+      patientId: patient._id,
+      oldStatus,
+      newStatus: status,
+    });
+
+    res.status(200).json({
+      success: true,
+      message: "Patient status updated successfully",
+      data: { patient },
+    });
+  } catch (error) {
+    logError("Update patient status error", error, {
+      updatedBy: req.user?.id,
+      patientId: req.params.id,
+    });
+    if (error.name === "ValidationError") {
+      const messages = Object.values(error.errors).map((err) => err.message);
+      return res.status(400).json({
+        success: false,
+        message: messages.join(", "),
+      });
+    }
     res.status(500).json({
       success: false,
       message: "Server error. Please try again later.",

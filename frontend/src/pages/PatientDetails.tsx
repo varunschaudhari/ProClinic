@@ -35,6 +35,13 @@ type Patient = {
   notes?: string | null;
   tags?: string[];
   profileImage?: string | null;
+  status: string;
+  statusNotes?: string | null;
+  statusChangedDate?: string | null;
+  statusChangedBy?: {
+    _id: string;
+    name: string;
+  };
   isActive: boolean;
   createdAt: string;
   updatedAt?: string;
@@ -75,6 +82,11 @@ function PatientDetails() {
   const [loading, setLoading] = useState(true);
   const [isEditing, setIsEditing] = useState(false);
   const [showDeleteModal, setShowDeleteModal] = useState(false);
+  const [showStatusModal, setShowStatusModal] = useState(false);
+  const [statusFormData, setStatusFormData] = useState({
+    status: "",
+    statusNotes: "",
+  });
   const [formData, setFormData] = useState<PatientForm>({
     name: "",
     dateOfBirth: "",
@@ -536,6 +548,52 @@ function PatientDetails() {
       age--;
     }
     return age;
+  };
+
+  const getStatusColor = (status: string) => {
+    switch (status) {
+      case "active":
+        return "bg-emerald-50 text-emerald-700 border-emerald-200";
+      case "inactive":
+        return "bg-slate-50 text-slate-700 border-slate-200";
+      case "discharged":
+        return "bg-blue-50 text-blue-700 border-blue-200";
+      case "transferred":
+        return "bg-amber-50 text-amber-700 border-amber-200";
+      case "deceased":
+        return "bg-red-50 text-red-700 border-red-200";
+      case "absconded":
+        return "bg-orange-50 text-orange-700 border-orange-200";
+      case "on-leave":
+        return "bg-purple-50 text-purple-700 border-purple-200";
+      case "follow-up":
+        return "bg-indigo-50 text-indigo-700 border-indigo-200";
+      default:
+        return "bg-slate-50 text-slate-700 border-slate-200";
+    }
+  };
+
+  const handleStatusUpdate = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!id) return;
+
+    try {
+      const response = await patientsAPI.updateStatus(id, {
+        status: statusFormData.status,
+        statusNotes: statusFormData.statusNotes || undefined,
+      });
+
+      if (response.success) {
+        showSuccess("Patient status updated successfully");
+        setShowStatusModal(false);
+        fetchPatient(); // Refresh patient data
+      } else {
+        showError(response.message || "Failed to update patient status");
+      }
+    } catch (err: any) {
+      console.error("Error updating patient status:", err);
+      showError(err.message || "Failed to update patient status");
+    }
   };
 
   if (loading) {
@@ -1252,10 +1310,56 @@ function PatientDetails() {
                   )}
                 </div>
 
-                {/* Status */}
+                {/* Patient Status */}
+                <div>
+                  <label className="block text-sm font-medium text-slate-700 mb-2">
+                    Patient Status
+                  </label>
+                  <div className="flex items-center gap-2">
+                    <span
+                      className={`inline-flex rounded-lg border px-2.5 py-1 text-xs font-semibold capitalize ${getStatusColor(
+                        patient.status
+                      )}`}
+                    >
+                      {patient.status.replace("-", " ")}
+                    </span>
+                    {hasPermission(PERMISSIONS.PATIENTS_EDIT) && !isEditing && (
+                      <button
+                        onClick={() => {
+                          setStatusFormData({
+                            status: patient.status,
+                            statusNotes: patient.statusNotes || "",
+                          });
+                          setShowStatusModal(true);
+                        }}
+                        className="rounded-lg border border-slate-200 bg-slate-50 px-2 py-1 text-xs font-semibold text-slate-700 transition hover:border-slate-300 hover:bg-slate-100"
+                        title="Update Status"
+                      >
+                        Change
+                      </button>
+                    )}
+                  </div>
+                  {patient.statusNotes && (
+                    <p className="mt-1 text-xs text-slate-600">
+                      {patient.statusNotes}
+                    </p>
+                  )}
+                  {patient.statusChangedDate && (
+                    <p className="mt-1 text-xs text-slate-500">
+                      Changed: {new Date(patient.statusChangedDate).toLocaleDateString("en-US", {
+                        month: "short",
+                        day: "numeric",
+                        year: "numeric",
+                      })}
+                      {patient.statusChangedBy && ` by ${patient.statusChangedBy.name}`}
+                    </p>
+                  )}
+                </div>
+
+                {/* Active Status */}
                 <div>
                   <label className="block text-sm font-medium text-slate-700">
-                    Status
+                    Active Status
                   </label>
                   <span
                     className={`mt-1 inline-flex items-center gap-1.5 rounded-lg border px-2.5 py-1 text-xs font-semibold ${
@@ -1878,6 +1982,80 @@ function PatientDetails() {
                   className="w-full rounded-lg bg-indigo-700 px-4 py-2 text-sm font-semibold text-white transition hover:bg-indigo-800 disabled:cursor-not-allowed disabled:opacity-50 sm:w-auto"
                 >
                   Upload Document
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* Update Status Modal */}
+      {showStatusModal && patient && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
+          <div className="w-full max-w-md rounded-xl border border-slate-200 bg-white shadow-xl">
+            <div className="px-4 py-3 sm:px-6 sm:py-4 border-b border-slate-200">
+              <h2 className="text-base font-semibold text-slate-900 sm:text-lg">
+                Update Patient Status
+              </h2>
+              <p className="mt-1 text-xs text-slate-600 sm:text-sm">
+                {patient.name} ({patient.patientId})
+              </p>
+            </div>
+            <form onSubmit={handleStatusUpdate} className="px-4 py-4 sm:px-6 sm:pb-6">
+              <div className="space-y-4">
+                <div>
+                  <label className="block text-sm font-medium text-slate-700 mb-2">
+                    Status *
+                  </label>
+                  <select
+                    required
+                    value={statusFormData.status}
+                    onChange={(e) =>
+                      setStatusFormData({ ...statusFormData, status: e.target.value })
+                    }
+                    className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:border-indigo-500 focus:outline-none focus:ring-2 focus:ring-indigo-200"
+                  >
+                    <option value="active">Active</option>
+                    <option value="inactive">Inactive</option>
+                    <option value="discharged">Discharged</option>
+                    <option value="transferred">Transferred</option>
+                    <option value="deceased">Deceased</option>
+                    <option value="absconded">Absconded</option>
+                    <option value="on-leave">On Leave</option>
+                    <option value="follow-up">Follow-up</option>
+                  </select>
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-slate-700 mb-2">
+                    Status Notes
+                  </label>
+                  <textarea
+                    value={statusFormData.statusNotes}
+                    onChange={(e) =>
+                      setStatusFormData({ ...statusFormData, statusNotes: e.target.value })
+                    }
+                    rows={3}
+                    className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:border-indigo-500 focus:outline-none focus:ring-2 focus:ring-indigo-200"
+                    placeholder="Optional notes about the status change..."
+                  />
+                </div>
+              </div>
+              <div className="mt-6 flex gap-3">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setShowStatusModal(false);
+                    setStatusFormData({ status: "", statusNotes: "" });
+                  }}
+                  className="flex-1 rounded-lg border border-slate-300 bg-white px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  className="flex-1 rounded-lg bg-indigo-700 px-4 py-2 text-sm font-medium text-white hover:bg-indigo-800"
+                >
+                  Update Status
                 </button>
               </div>
             </form>

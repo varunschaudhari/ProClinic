@@ -5,6 +5,7 @@ import {
   createPatient,
   updatePatient,
   deletePatient,
+  updatePatientStatus,
 } from "../controllers/patientController.js";
 import { protect, hasPermission } from "../middleware/auth.js";
 import upload from "../middleware/upload.js";
@@ -25,5 +26,7 @@ router
   .get(hasPermission(PERMISSIONS.PATIENTS_VIEW), getPatient)
   .put(hasPermission(PERMISSIONS.PATIENTS_EDIT), upload.single("profileImage"), updatePatient)
   .delete(hasPermission(PERMISSIONS.PATIENTS_DELETE), deletePatient);
+
+router.patch("/:id/status", hasPermission(PERMISSIONS.PATIENTS_EDIT), updatePatientStatus);
 
 export default router;

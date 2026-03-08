@@ -109,6 +109,25 @@ const patientSchema = new mongoose.Schema(
       type: String,
       default: null,
     },
+    status: {
+      type: String,
+      enum: ["active", "inactive", "discharged", "transferred", "deceased", "absconded", "on-leave", "follow-up"],
+      default: "active",
+    },
+    statusNotes: {
+      type: String,
+      trim: true,
+      default: null,
+    },
+    statusChangedDate: {
+      type: Date,
+      default: null,
+    },
+    statusChangedBy: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "User",
+      default: null,
+    },
     isActive: {
       type: Boolean,
       default: true,
@@ -145,6 +164,10 @@ patientSchema.pre("save", async function (next) {
   }
   next();
 });
+
+// Index for faster queries
+patientSchema.index({ status: 1 });
+patientSchema.index({ isActive: 1, status: 1 });
 
 const Patient = mongoose.model("Patient", patientSchema);
 
