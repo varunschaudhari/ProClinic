@@ -360,7 +360,7 @@ function IPDDetails() {
     return (
       <div className="flex min-h-screen bg-slate-50">
         <Sidebar />
-        <div className="flex flex-1 items-center justify-center lg:ml-72">
+        <div className="flex flex-1 items-center justify-center sidebar-content-margin">
           <div className="text-center">
             <div className="mb-4 inline-block h-8 w-8 animate-spin rounded-full border-4 border-solid border-indigo-600 border-r-transparent"></div>
             <p className="text-slate-600">Loading IPD record...</p>
@@ -374,7 +374,7 @@ function IPDDetails() {
     return (
       <div className="flex min-h-screen bg-slate-50">
         <Sidebar />
-        <div className="flex flex-1 items-center justify-center lg:ml-72">
+        <div className="flex flex-1 items-center justify-center sidebar-content-margin">
           <div className="text-center">
             <p className="text-slate-600">IPD record not found</p>
             <Link to="/ipd/dashboard" className="mt-4 inline-block text-indigo-600 hover:text-indigo-700">
@@ -392,7 +392,7 @@ function IPDDetails() {
     <div className="flex min-h-screen bg-slate-50">
       <Sidebar />
 
-      <div className="flex flex-1 flex-col lg:ml-72">
+      <div className="flex flex-1 flex-col sidebar-content-margin">
         {/* Header */}
         <header className="sticky top-0 z-30 border-b border-slate-200 bg-white/95 backdrop-blur-sm shadow-sm">
           <div className="flex flex-col gap-3 px-4 py-3 sm:flex-row sm:items-center sm:justify-between sm:px-6 sm:py-4 lg:px-8">

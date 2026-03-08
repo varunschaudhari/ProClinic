@@ -269,7 +269,7 @@ function DoctorSchedules() {
   return (
     <div className="flex min-h-screen bg-slate-50">
       <Sidebar />
-      <main className="flex-1 p-4 sm:p-6 lg:ml-72">
+      <main className="flex-1 p-4 sm:p-6 sidebar-content-margin">
         <div className="mx-auto max-w-7xl">
           {/* Header */}
           <div className="mb-6">

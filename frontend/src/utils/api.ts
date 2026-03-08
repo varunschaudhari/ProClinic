@@ -203,6 +203,121 @@ export const patientsAPI = {
     });
     return response.json();
   },
+
+  // Consultation Summary
+  getConsultationSummary: async (patientId: string) => {
+    const response = await apiRequest(`/patients/${patientId}/consultation-summary`);
+    return response.json();
+  },
+
+  // Operative Summary
+  getOperativeSummary: async (patientId: string) => {
+    const response = await apiRequest(`/patients/${patientId}/operative-summary`);
+    return response.json();
+  },
+
+  // Billing Information
+  getBillingInformation: async (patientId: string) => {
+    const response = await apiRequest(`/patients/${patientId}/billing-information`);
+    return response.json();
+  },
+
+  // Remarks
+  getRemarks: async (patientId: string, remarkType?: string) => {
+    const queryParams = remarkType ? `?remarkType=${remarkType}` : "";
+    const response = await apiRequest(`/patients/${patientId}/remarks${queryParams}`);
+    return response.json();
+  },
+
+  createRemark: async (patientId: string, remarkData: { remark: string; remarkType?: string; allowedRoles?: string[]; isPrivate?: boolean }) => {
+    const response = await apiRequest(`/patients/${patientId}/remarks`, {
+      method: "POST",
+      body: JSON.stringify(remarkData),
+    });
+    return response.json();
+  },
+
+  updateRemark: async (patientId: string, remarkId: string, remarkData: { remark?: string; remarkType?: string; allowedRoles?: string[]; isPrivate?: boolean }) => {
+    const response = await apiRequest(`/patients/${patientId}/remarks/${remarkId}`, {
+      method: "PUT",
+      body: JSON.stringify(remarkData),
+    });
+    return response.json();
+  },
+
+  deleteRemark: async (patientId: string, remarkId: string) => {
+    const response = await apiRequest(`/patients/${patientId}/remarks/${remarkId}`, {
+      method: "DELETE",
+    });
+    return response.json();
+  },
+
+  // Engagement
+  getEngagement: async (patientId: string) => {
+    const response = await apiRequest(`/patients/${patientId}/engagement`);
+    return response.json();
+  },
+
+  updateEngagement: async (patientId: string, engagementData: any) => {
+    const response = await apiRequest(`/patients/${patientId}/engagement`, {
+      method: "PUT",
+      body: JSON.stringify(engagementData),
+    });
+    return response.json();
+  },
+
+  acknowledgeMaterial: async (patientId: string, materialId: string) => {
+    const response = await apiRequest(`/patients/${patientId}/engagement/materials/${materialId}/acknowledge`, {
+      method: "PUT",
+    });
+    return response.json();
+  },
+
+  // Clinical Data
+  getClinicalData: async (patientId: string) => {
+    const response = await apiRequest(`/patients/${patientId}/clinical-data`);
+    return response.json();
+  },
+
+  createClinicalData: async (patientId: string, clinicalData: any) => {
+    const response = await apiRequest(`/patients/${patientId}/clinical-data`, {
+      method: "POST",
+      body: JSON.stringify(clinicalData),
+    });
+    return response.json();
+  },
+
+  addVitalSigns: async (patientId: string, vitalSigns: any) => {
+    const response = await apiRequest(`/patients/${patientId}/clinical-data/vital-signs`, {
+      method: "POST",
+      body: JSON.stringify(vitalSigns),
+    });
+    return response.json();
+  },
+
+  addLabResult: async (patientId: string, labResult: any) => {
+    const response = await apiRequest(`/patients/${patientId}/clinical-data/lab-results`, {
+      method: "POST",
+      body: JSON.stringify(labResult),
+    });
+    return response.json();
+  },
+
+  addImagingReport: async (patientId: string, imagingReport: any) => {
+    const response = await apiRequest(`/patients/${patientId}/clinical-data/imaging-reports`, {
+      method: "POST",
+      body: JSON.stringify(imagingReport),
+    });
+    return response.json();
+  },
+
+  addClinicalObservation: async (patientId: string, observation: any) => {
+    const response = await apiRequest(`/patients/${patientId}/clinical-data/observations`, {
+      method: "POST",
+      body: JSON.stringify(observation),
+    });
+    return response.json();
+  },
 };
 
 // Visits API

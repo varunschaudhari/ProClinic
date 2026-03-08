@@ -77,6 +77,17 @@ export const PERMISSIONS = {
   OT_SCHEDULE_CREATE: "ot.schedule.create",
   OT_SCHEDULE_EDIT: "ot.schedule.edit",
   OT_SCHEDULE_DELETE: "ot.schedule.delete",
+
+  // Patient detail tabs
+  PATIENTS_CONSULTATION_SUMMARY_VIEW: "patients.consultation-summary.view",
+  PATIENTS_CLINICAL_DATA_VIEW: "patients.clinical-data.view",
+  PATIENTS_CLINICAL_DATA_EDIT: "patients.clinical-data.edit",
+  PATIENTS_OPERATIVE_SUMMARY_VIEW: "patients.operative-summary.view",
+  PATIENTS_ENGAGEMENT_VIEW: "patients.engagement.view",
+  PATIENTS_ENGAGEMENT_EDIT: "patients.engagement.edit",
+  PATIENTS_REMARKS_VIEW: "patients.remarks.view",
+  PATIENTS_REMARKS_EDIT: "patients.remarks.edit",
+  PATIENTS_BILLING_VIEW: "patients.billing.view",
 };
 
 // Get all permissions as an array

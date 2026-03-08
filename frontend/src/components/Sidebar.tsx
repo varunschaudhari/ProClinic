@@ -23,6 +23,10 @@ function Sidebar() {
   const navigate = useNavigate();
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   const [expandedMenus, setExpandedMenus] = useState<Set<string>>(new Set());
+  const [isCollapsed, setIsCollapsed] = useState<boolean>(() => {
+    const saved = localStorage.getItem("sidebar_collapsed");
+    return saved ? JSON.parse(saved) : false;
+  });
   const [user, setUser] = useState<{
     name: string;
     email: string;
@@ -117,6 +121,35 @@ function Sidebar() {
       return newSet;
     });
   };
+
+  const toggleCollapse = () => {
+    const newState = !isCollapsed;
+    setIsCollapsed(newState);
+    localStorage.setItem("sidebar_collapsed", JSON.stringify(newState));
+    // Update body class for global state
+    if (newState) {
+      document.body.classList.add("sidebar-collapsed");
+      document.body.classList.remove("sidebar-expanded");
+    } else {
+      document.body.classList.add("sidebar-expanded");
+      document.body.classList.remove("sidebar-collapsed");
+    }
+    // Close all submenus when collapsing
+    if (newState) {
+      setExpandedMenus(new Set());
+    }
+  };
+
+  // Initialize body class on mount
+  useEffect(() => {
+    if (isCollapsed) {
+      document.body.classList.add("sidebar-collapsed");
+      document.body.classList.remove("sidebar-expanded");
+    } else {
+      document.body.classList.add("sidebar-expanded");
+      document.body.classList.remove("sidebar-collapsed");
+    }
+  }, [isCollapsed]);
 
   const isSubmenuExpanded = (menuName: string) => expandedMenus.has(menuName);
 
@@ -371,61 +404,67 @@ function Sidebar() {
 
       {/* Sidebar */}
       <aside
-        className={`fixed left-0 top-0 z-40 h-screen w-72 transform border-r border-slate-200/80 bg-gradient-to-b from-white to-slate-50/50 shadow-xl transition-transform duration-300 ease-in-out lg:translate-x-0 ${
+        className={`fixed left-0 top-0 z-40 h-screen transform border-r border-slate-200/80 bg-gradient-to-b from-white to-slate-50/50 shadow-xl transition-all duration-300 ease-in-out lg:translate-x-0 ${
+          isCollapsed ? "w-20" : "w-56"
+        } ${
           isMobileMenuOpen ? "translate-x-0" : "-translate-x-full"
         }`}
       >
         <div className="flex h-full flex-col">
           {/* Logo Section */}
-          <div className="border-b border-slate-200/80 bg-white/80 px-6 py-5 backdrop-blur-sm">
+          <div className="border-b border-slate-200/80 bg-white/80 px-4 py-4 backdrop-blur-sm">
             <div className="flex items-center gap-3">
-              <div className="relative flex h-12 w-12 items-center justify-center rounded-xl bg-gradient-to-br from-indigo-600 via-indigo-500 to-cyan-500 shadow-lg shadow-indigo-500/30">
+              <div className="relative flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-xl bg-gradient-to-br from-indigo-600 via-indigo-500 to-cyan-500 shadow-lg shadow-indigo-500/30">
                 <div className="absolute inset-0 rounded-xl bg-gradient-to-br from-white/20 to-transparent"></div>
-                <span className="relative text-xl font-bold text-white">P</span>
+                <span className="relative text-lg font-bold text-white">P</span>
               </div>
-              <div>
-                <h1 className="text-xl font-bold tracking-tight text-slate-900">
-                  ProClinic
-                </h1>
-                <p className="text-xs font-medium text-slate-500">
-                  Hospital Management
-                </p>
-              </div>
+              {!isCollapsed && (
+                <div className="min-w-0 flex-1">
+                  <h1 className="text-lg font-bold tracking-tight text-slate-900 truncate">
+                    ProClinic
+                  </h1>
+                  <p className="text-xs font-medium text-slate-500 truncate">
+                    Hospital Management
+                  </p>
+                </div>
+              )}
             </div>
           </div>
 
           {/* User Profile Section */}
           {user && (
-            <div className="border-b border-slate-200/80 bg-gradient-to-r from-indigo-50/50 to-cyan-50/50 px-6 py-4">
+            <div className="border-b border-slate-200/80 bg-gradient-to-r from-indigo-50/50 to-cyan-50/50 px-4 py-3">
               <div className="flex items-center gap-3">
-                <div className="relative">
-                  <div className="flex h-11 w-11 items-center justify-center rounded-xl bg-gradient-to-br from-indigo-600 to-indigo-500 shadow-md">
+                <div className="relative flex-shrink-0">
+                  <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-gradient-to-br from-indigo-600 to-indigo-500 shadow-md">
                     <span className="text-sm font-bold text-white">
                       {user.name.charAt(0).toUpperCase()}
                     </span>
                   </div>
-                  <div className="absolute -bottom-0.5 -right-0.5 h-4 w-4 rounded-full border-2 border-white bg-emerald-500"></div>
+                  <div className="absolute -bottom-0.5 -right-0.5 h-3.5 w-3.5 rounded-full border-2 border-white bg-emerald-500"></div>
                 </div>
-                <div className="flex-1 min-w-0">
-                  <p className="truncate text-sm font-semibold text-slate-900">
-                    {user.name}
-                  </p>
-                  <div className="flex items-center gap-2">
-                    <span
-                      className={`inline-flex rounded-md border px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide ${getRoleBadgeColor(
-                        user.role
-                      )}`}
-                    >
-                      {user.role}
-                    </span>
+                {!isCollapsed && (
+                  <div className="flex-1 min-w-0">
+                    <p className="truncate text-sm font-semibold text-slate-900">
+                      {user.name}
+                    </p>
+                    <div className="flex items-center gap-2">
+                      <span
+                        className={`inline-flex rounded-md border px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide ${getRoleBadgeColor(
+                          user.role
+                        )}`}
+                      >
+                        {user.role}
+                      </span>
+                    </div>
                   </div>
-                </div>
+                )}
               </div>
             </div>
           )}
 
           {/* Navigation */}
-          <nav className="flex-1 overflow-y-auto px-4 py-6 custom-scrollbar">
+          <nav className="flex-1 overflow-y-auto px-3 py-4 custom-scrollbar">
             {/* Main Menu */}
             <div>
               <ul className="space-y-1">
@@ -441,12 +480,13 @@ function Sidebar() {
                         <>
                           {/* Parent menu item with submenu */}
                           <button
-                            onClick={() => toggleSubmenu(item.name)}
+                            onClick={() => !isCollapsed && toggleSubmenu(item.name)}
+                            title={isCollapsed ? item.name : undefined}
                             className={`group relative flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-medium transition-all ${
                               isItemActive
                                 ? "bg-gradient-to-r from-indigo-600 to-indigo-500 text-white shadow-lg shadow-indigo-500/30"
                                 : "text-slate-700 hover:bg-slate-100/80 hover:text-slate-900"
-                            }`}
+                            } ${isCollapsed ? "justify-center" : ""}`}
                           >
                             {isItemActive && (
                               <div className="absolute left-0 top-1/2 h-8 w-1 -translate-y-1/2 rounded-r-full bg-white/50"></div>
@@ -460,25 +500,29 @@ function Sidebar() {
                             >
                               {item.icon}
                             </span>
-                            <span className="flex-1 text-left">{item.name}</span>
-                            <svg
-                              className={`h-4 w-4 transition-transform ${
-                                isExpanded ? "rotate-90" : ""
-                              } ${isItemActive ? "text-white" : "text-slate-400"}`}
-                              fill="none"
-                              viewBox="0 0 24 24"
-                              stroke="currentColor"
-                            >
-                              <path
-                                strokeLinecap="round"
-                                strokeLinejoin="round"
-                                strokeWidth={2}
-                                d="M9 5l7 7-7 7"
-                              />
-                            </svg>
+                            {!isCollapsed && (
+                              <>
+                                <span className="flex-1 text-left">{item.name}</span>
+                                <svg
+                                  className={`h-4 w-4 transition-transform ${
+                                    isExpanded ? "rotate-90" : ""
+                                  } ${isItemActive ? "text-white" : "text-slate-400"}`}
+                                  fill="none"
+                                  viewBox="0 0 24 24"
+                                  stroke="currentColor"
+                                >
+                                  <path
+                                    strokeLinecap="round"
+                                    strokeLinejoin="round"
+                                    strokeWidth={2}
+                                    d="M9 5l7 7-7 7"
+                                  />
+                                </svg>
+                              </>
+                            )}
                           </button>
                           {/* Submenu items */}
-                          {isExpanded && (
+                          {!isCollapsed && isExpanded && (
                             <ul className="ml-4 mt-1 space-y-0.5 border-l-2 border-slate-200 pl-2">
                               {item.children
                                 ?.filter((child) => canAccessRoute(child.path))
@@ -528,11 +572,12 @@ function Sidebar() {
                         <Link
                           to={item.path || "#"}
                           onClick={() => setIsMobileMenuOpen(false)}
+                          title={isCollapsed ? item.name : undefined}
                           className={`group relative flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-medium transition-all ${
                             isItemActive
                               ? "bg-gradient-to-r from-indigo-600 to-indigo-500 text-white shadow-lg shadow-indigo-500/30"
                               : "text-slate-700 hover:bg-slate-100/80 hover:text-slate-900"
-                          }`}
+                          } ${isCollapsed ? "justify-center" : ""}`}
                         >
                           {isItemActive && (
                             <div className="absolute left-0 top-1/2 h-8 w-1 -translate-y-1/2 rounded-r-full bg-white/50"></div>
@@ -546,17 +591,21 @@ function Sidebar() {
                           >
                             {item.icon}
                           </span>
-                          <span className="flex-1">{item.name}</span>
-                          {item.badge !== undefined && item.badge > 0 && (
-                            <span
-                              className={`rounded-full px-2 py-0.5 text-xs font-bold ${
-                                isItemActive
-                                  ? "bg-white/20 text-white"
-                                  : "bg-indigo-100 text-indigo-700"
-                              }`}
-                            >
-                              {item.badge}
-                            </span>
+                          {!isCollapsed && (
+                            <>
+                              <span className="flex-1">{item.name}</span>
+                              {item.badge !== undefined && item.badge > 0 && (
+                                <span
+                                  className={`rounded-full px-2 py-0.5 text-xs font-bold ${
+                                    isItemActive
+                                      ? "bg-white/20 text-white"
+                                      : "bg-indigo-100 text-indigo-700"
+                                  }`}
+                                >
+                                  {item.badge}
+                                </span>
+                              )}
+                            </>
                           )}
                         </Link>
                       )}
@@ -568,10 +617,46 @@ function Sidebar() {
           </nav>
 
           {/* Footer Section */}
-          <div className="border-t border-slate-200/80 bg-white/80 p-4 backdrop-blur-sm">
+          <div className="border-t border-slate-200/80 bg-white/80 p-3 backdrop-blur-sm">
+            {/* Collapse/Expand Hamburger Icon */}
+            <button
+              onClick={toggleCollapse}
+              className="group mb-3 flex w-full items-center justify-center rounded-lg p-2.5 text-slate-600 transition-all hover:bg-slate-100 hover:text-slate-900"
+              title={isCollapsed ? "Expand sidebar" : "Collapse sidebar"}
+            >
+              <svg
+                className="h-5 w-5"
+                fill="none"
+                viewBox="0 0 24 24"
+                stroke="currentColor"
+                strokeWidth={2}
+              >
+                {isCollapsed ? (
+                  // Hamburger icon (3 lines) when collapsed
+                  <>
+                    <path
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                      d="M4 6h16M4 12h16M4 18h16"
+                    />
+                  </>
+                ) : (
+                  // Close/X icon when expanded
+                  <path
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    d="M6 18L18 6M6 6l12 12"
+                  />
+                )}
+              </svg>
+            </button>
+            
             <button
               onClick={handleLogout}
-              className="group flex w-full items-center gap-3 rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm font-semibold text-slate-700 shadow-sm transition-all hover:border-rose-300 hover:bg-rose-50 hover:text-rose-700"
+              className={`group flex w-full items-center gap-3 rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-sm font-semibold text-slate-700 shadow-sm transition-all hover:border-rose-300 hover:bg-rose-50 hover:text-rose-700 ${
+                isCollapsed ? "justify-center" : ""
+              }`}
+              title={isCollapsed ? "Sign Out" : undefined}
             >
               <svg
                 className="h-5 w-5 transition-transform group-hover:translate-x-0.5"
@@ -586,13 +671,15 @@ function Sidebar() {
                   d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1"
                 />
               </svg>
-              <span>Sign Out</span>
+              {!isCollapsed && <span>Sign Out</span>}
             </button>
-            <div className="mt-3 text-center">
-              <p className="text-xs text-slate-500">
-                Version 1.0.0
-              </p>
-            </div>
+            {!isCollapsed && (
+              <div className="mt-2 text-center">
+                <p className="text-xs text-slate-500">
+                  Version 1.0.0
+                </p>
+              </div>
+            )}
           </div>
         </div>
       </aside>

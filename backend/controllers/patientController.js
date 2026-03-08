@@ -1,5 +1,8 @@
 import Patient from "../models/Patient.js";
 import Sequence from "../models/Sequence.js";
+import OPD from "../models/OPD.js";
+import IPD from "../models/IPD.js";
+import OTScheduler from "../models/OTScheduler.js";
 import { logInfo, logError } from "../config/logger.js";
 import fs from "fs";
 import path from "path";
@@ -611,6 +614,252 @@ export const updatePatientStatus = async (req, res) => {
     res.status(500).json({
       success: false,
       message: "Server error. Please try again later.",
+    });
+  }
+};
+
+// @desc    Get consultation summary for a patient (aggregate OPD visits)
+// @route   GET /api/patients/:patientId/consultation-summary
+// @access  Private
+export const getConsultationSummary = async (req, res) => {
+  try {
+    const { patientId } = req.params;
+
+    const opdRecords = await OPD.find({ patientId })
+      .populate("doctorId", "name email role")
+      .populate("createdBy", "name email")
+      .sort({ visitDate: -1 });
+
+    // Calculate summary statistics
+    const totalVisits = opdRecords.length;
+    const completedVisits = opdRecords.filter((opd) => opd.status === "completed").length;
+    const totalBilling = opdRecords.reduce((sum, opd) => sum + (opd.totalAmount || 0), 0);
+    const totalPaid = opdRecords.reduce((sum, opd) => sum + (opd.paidAmount || 0), 0);
+    const pendingAmount = totalBilling - totalPaid;
+
+    // Group by diagnosis
+    const diagnosisCount = {};
+    opdRecords.forEach((opd) => {
+      if (opd.diagnosis) {
+        diagnosisCount[opd.diagnosis] = (diagnosisCount[opd.diagnosis] || 0) + 1;
+      }
+    });
+
+    // Get follow-up appointments
+    const followUps = opdRecords.filter((opd) => opd.followUpRequired && opd.followUpDate);
+
+    logInfo(`Fetched consultation summary for patient ${patientId}`);
+
+    res.status(200).json({
+      success: true,
+      data: {
+        summary: {
+          totalVisits,
+          completedVisits,
+          totalBilling,
+          totalPaid,
+          pendingAmount,
+          diagnosisCount,
+          followUpsCount: followUps.length,
+        },
+        visits: opdRecords,
+        followUps: followUps.map((opd) => ({
+          opdNumber: opd.opdNumber,
+          visitDate: opd.visitDate,
+          followUpDate: opd.followUpDate,
+          doctor: opd.doctorId,
+          diagnosis: opd.diagnosis,
+        })),
+      },
+    });
+  } catch (error) {
+    logError("Get consultation summary error", error, {
+      patientId: req.params.patientId,
+    });
+    res.status(500).json({
+      success: false,
+      message: "Error fetching consultation summary",
+      error: error.message,
+    });
+  }
+};
+
+// @desc    Get operative summary for a patient (aggregate OT schedules)
+// @route   GET /api/patients/:patientId/operative-summary
+// @access  Private
+export const getOperativeSummary = async (req, res) => {
+  try {
+    const { patientId } = req.params;
+
+    const otSchedules = await OTScheduler.find({ patientId })
+      .populate("surgeonId", "name email role")
+      .populate("anesthetistId", "name email role")
+      .populate("otId", "otNumber otName otType")
+      .populate("ipdId", "ipdNumber")
+      .populate("createdBy", "name email")
+      .sort({ scheduledDate: -1 });
+
+    // Calculate summary statistics
+    const totalOperations = otSchedules.length;
+    const completedOperations = otSchedules.filter((ot) => ot.status === "completed").length;
+    const scheduledOperations = otSchedules.filter((ot) => ot.status === "scheduled").length;
+    const cancelledOperations = otSchedules.filter((ot) => ot.status === "cancelled").length;
+
+    // Group by operation type
+    const operationTypeCount = {};
+    otSchedules.forEach((ot) => {
+      if (ot.operationType) {
+        operationTypeCount[ot.operationType] = (operationTypeCount[ot.operationType] || 0) + 1;
+      }
+    });
+
+    logInfo(`Fetched operative summary for patient ${patientId}`);
+
+    res.status(200).json({
+      success: true,
+      data: {
+        summary: {
+          totalOperations,
+          completedOperations,
+          scheduledOperations,
+          cancelledOperations,
+          operationTypeCount,
+        },
+        operations: otSchedules,
+      },
+    });
+  } catch (error) {
+    logError("Get operative summary error", error, {
+      patientId: req.params.patientId,
+    });
+    res.status(500).json({
+      success: false,
+      message: "Error fetching operative summary",
+      error: error.message,
+    });
+  }
+};
+
+// @desc    Get billing information for a patient (aggregate OPD/IPD billing)
+// @route   GET /api/patients/:patientId/billing-information
+// @access  Private
+export const getBillingInformation = async (req, res) => {
+  try {
+    const { patientId } = req.params;
+
+    // Get OPD billing records
+    const opdRecords = await OPD.find({ patientId })
+      .select("opdNumber visitDate consultationFee additionalCharges labTests discount totalAmount paidAmount paymentStatus paymentMethod paymentDate")
+      .sort({ visitDate: -1 });
+
+    // Get IPD billing records
+    const ipdRecords = await IPD.find({ patientId })
+      .select("ipdNumber admissionDate dischargeDate roomCharges medicationCharges procedureCharges labCharges otherCharges discount totalAmount paidAmount paymentStatus paymentMethod paymentDate")
+      .sort({ admissionDate: -1 });
+
+    // Calculate OPD totals
+    const opdTotal = opdRecords.reduce((sum, opd) => sum + (opd.totalAmount || 0), 0);
+    const opdPaid = opdRecords.reduce((sum, opd) => sum + (opd.paidAmount || 0), 0);
+    const opdPending = opdTotal - opdPaid;
+
+    // Calculate IPD totals
+    const ipdTotal = ipdRecords.reduce((sum, ipd) => sum + (ipd.totalAmount || 0), 0);
+    const ipdPaid = ipdRecords.reduce((sum, ipd) => sum + (ipd.paidAmount || 0), 0);
+    const ipdPending = ipdTotal - ipdPaid;
+
+    // Overall totals
+    const grandTotal = opdTotal + ipdTotal;
+    const grandPaid = opdPaid + ipdPaid;
+    const grandPending = grandTotal - grandPaid;
+
+    // Payment history (combine OPD and IPD payments)
+    const paymentHistory = [
+      ...opdRecords
+        .filter((opd) => opd.paidAmount > 0)
+        .map((opd) => ({
+          date: opd.paymentDate || opd.visitDate,
+          type: "OPD",
+          reference: opd.opdNumber,
+          amount: opd.paidAmount,
+          method: opd.paymentMethod,
+          status: opd.paymentStatus,
+        })),
+      ...ipdRecords
+        .filter((ipd) => ipd.paidAmount > 0)
+        .map((ipd) => ({
+          date: ipd.paymentDate || ipd.admissionDate,
+          type: "IPD",
+          reference: ipd.ipdNumber,
+          amount: ipd.paidAmount,
+          method: ipd.paymentMethod,
+          status: ipd.paymentStatus,
+        })),
+    ].sort((a, b) => new Date(b.date) - new Date(a.date));
+
+    // Pending invoices
+    const pendingInvoices = [
+      ...opdRecords
+        .filter((opd) => opd.paymentStatus !== "paid")
+        .map((opd) => ({
+          date: opd.visitDate,
+          type: "OPD",
+          reference: opd.opdNumber,
+          totalAmount: opd.totalAmount,
+          paidAmount: opd.paidAmount,
+          pendingAmount: (opd.totalAmount || 0) - (opd.paidAmount || 0),
+          status: opd.paymentStatus,
+        })),
+      ...ipdRecords
+        .filter((ipd) => ipd.paymentStatus !== "paid")
+        .map((ipd) => ({
+          date: ipd.admissionDate,
+          type: "IPD",
+          reference: ipd.ipdNumber,
+          totalAmount: ipd.totalAmount,
+          paidAmount: ipd.paidAmount,
+          pendingAmount: (ipd.totalAmount || 0) - (ipd.paidAmount || 0),
+          status: ipd.paymentStatus,
+        })),
+    ].sort((a, b) => new Date(b.date) - new Date(a.date));
+
+    logInfo(`Fetched billing information for patient ${patientId}`);
+
+    res.status(200).json({
+      success: true,
+      data: {
+        summary: {
+          opd: {
+            total: opdTotal,
+            paid: opdPaid,
+            pending: opdPending,
+            count: opdRecords.length,
+          },
+          ipd: {
+            total: ipdTotal,
+            paid: ipdPaid,
+            pending: ipdPending,
+            count: ipdRecords.length,
+          },
+          overall: {
+            total: grandTotal,
+            paid: grandPaid,
+            pending: grandPending,
+          },
+        },
+        opdRecords,
+        ipdRecords,
+        paymentHistory,
+        pendingInvoices,
+      },
+    });
+  } catch (error) {
+    logError("Get billing information error", error, {
+      patientId: req.params.patientId,
+    });
+    res.status(500).json({
+      success: false,
+      message: "Error fetching billing information",
+      error: error.message,
     });
   }
 };

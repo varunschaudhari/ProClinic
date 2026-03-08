@@ -61,7 +61,7 @@ function Dashboard() {
       <Sidebar />
 
       {/* Main Content Area */}
-      <div className="flex flex-1 flex-col lg:ml-72">
+      <div className="flex flex-1 flex-col sidebar-content-margin">
         {/* Header */}
         <header className="sticky top-0 z-30 border-b border-slate-200 bg-white/95 backdrop-blur-sm shadow-sm">
           <div className="flex flex-col gap-3 px-4 py-3 sm:flex-row sm:items-center sm:justify-between sm:px-6 sm:py-4 lg:px-8">
