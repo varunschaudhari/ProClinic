@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, useLocation } from "react-router-dom";
 import Sidebar from "../components/Sidebar";
 import { appointmentsAPI, patientsAPI, usersAPI } from "../utils/api";
 import { hasPermission, PERMISSIONS } from "../utils/permissions";
@@ -99,13 +99,34 @@ type AppointmentStats = {
 
 type ViewMode = "dashboard" | "calendar" | "list";
 
-function Appointments() {
+type AppointmentsProps = {
+  viewMode?: ViewMode;
+};
+
+function Appointments({ viewMode: propViewMode }: AppointmentsProps = {}) {
   const navigate = useNavigate();
+  const location = useLocation();
   const [appointments, setAppointments] = useState<Appointment[]>([]);
   const [stats, setStats] = useState<AppointmentStats | null>(null);
   const [loading, setLoading] = useState(true);
   const [loadingStats, setLoadingStats] = useState(false);
-  const [viewMode, setViewMode] = useState<ViewMode>("dashboard");
+  
+  // Determine view mode from URL or prop
+  const getViewModeFromPath = (): ViewMode => {
+    if (propViewMode) return propViewMode;
+    const path = location.pathname;
+    if (path.includes("/list")) return "list";
+    if (path.includes("/calendar")) return "calendar";
+    return "dashboard";
+  };
+  
+  const [viewMode, setViewMode] = useState<ViewMode>(getViewModeFromPath());
+  
+  // Update view mode when route changes
+  useEffect(() => {
+    const newViewMode = getViewModeFromPath();
+    setViewMode(newViewMode);
+  }, [location.pathname]);
   const [showBookingModal, setShowBookingModal] = useState(false);
   const [showDetailsModal, setShowDetailsModal] = useState(false);
   const [showRescheduleModal, setShowRescheduleModal] = useState(false);
@@ -142,6 +163,7 @@ function Appointments() {
     reason: "",
   });
   const [cancelReason, setCancelReason] = useState("");
+  const [currentMonth, setCurrentMonth] = useState(new Date());
 
   useEffect(() => {
     checkAuth();
@@ -151,7 +173,7 @@ function Appointments() {
       fetchStats();
     }
     fetchAppointments();
-  }, [filterDate, filterDoctor, filterStatus, filterPriority, filterType, searchQuery, startDate, endDate, viewMode]);
+  }, [filterDate, filterDoctor, filterStatus, filterPriority, filterType, searchQuery, startDate, endDate, viewMode, currentMonth]);
 
   const checkAuth = () => {
     const token = localStorage.getItem("proclinic_token") || sessionStorage.getItem("proclinic_token");
@@ -192,6 +214,14 @@ function Appointments() {
       if (startDate && endDate) {
         params.startDate = startDate;
         params.endDate = endDate;
+      } else if (viewMode === "calendar") {
+        // For calendar view, fetch appointments for the current month
+        const year = currentMonth.getFullYear();
+        const month = currentMonth.getMonth();
+        const firstDay = new Date(year, month, 1);
+        const lastDay = new Date(year, month + 1, 0);
+        params.startDate = firstDay.toISOString().split('T')[0];
+        params.endDate = lastDay.toISOString().split('T')[0];
       }
       if (searchQuery) params.search = searchQuery;
       const response = await appointmentsAPI.getAll(params);
@@ -206,6 +236,53 @@ function Appointments() {
     } finally {
       setLoading(false);
     }
+  };
+
+  // Helper function to generate calendar days for the current month
+  const getCalendarDays = () => {
+    const year = currentMonth.getFullYear();
+    const month = currentMonth.getMonth();
+    const firstDay = new Date(year, month, 1);
+    const lastDay = new Date(year, month + 1, 0);
+    const daysInMonth = lastDay.getDate();
+    const startingDayOfWeek = firstDay.getDay();
+
+    const days = [];
+
+    // Add previous month's trailing days
+    const prevMonth = new Date(year, month - 1, 0);
+    const daysInPrevMonth = prevMonth.getDate();
+    for (let i = startingDayOfWeek - 1; i >= 0; i--) {
+      days.push({
+        date: daysInPrevMonth - i,
+        month: month - 1,
+        year: month === 0 ? year - 1 : year,
+        isCurrentMonth: false,
+      });
+    }
+
+    // Add current month's days
+    for (let i = 1; i <= daysInMonth; i++) {
+      days.push({
+        date: i,
+        month: month,
+        year: year,
+        isCurrentMonth: true,
+      });
+    }
+
+    // Add next month's leading days to fill the grid
+    const remainingDays = 42 - days.length; // 6 rows × 7 days
+    for (let i = 1; i <= remainingDays; i++) {
+      days.push({
+        date: i,
+        month: month + 1,
+        year: month === 11 ? year + 1 : year,
+        isCurrentMonth: false,
+      });
+    }
+
+    return days;
   };
 
   const fetchPatients = async () => {
@@ -487,52 +564,75 @@ function Appointments() {
         <div className="mx-auto max-w-7xl">
           {/* Header */}
           <div className="mb-6 flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-            <div>
-              <h1 className="text-2xl font-bold text-slate-900 sm:text-3xl">Appointments</h1>
-              <p className="mt-1 text-sm text-slate-600">Manage patient appointments</p>
+            <div className="flex-1">
+              <h1 className="text-2xl font-bold text-slate-900 sm:text-3xl">
+                {viewMode === "dashboard" ? "Appointment Dashboard" : 
+                 viewMode === "list" ? "Appointment List" : 
+                 "Appointment Calendar"}
+              </h1>
+              <p className="mt-1 text-sm text-slate-600">
+                {viewMode === "dashboard" ? "Overview and statistics" : 
+                 viewMode === "list" ? "View and manage all appointments" : 
+                 "Calendar view of appointments"}
+              </p>
             </div>
-            {hasPermission(PERMISSIONS.APPOINTMENTS_CREATE) && (
-              <button
-                onClick={() => setShowBookingModal(true)}
-                className="w-full rounded-xl bg-indigo-700 px-4 py-2 text-sm font-semibold text-white shadow-md shadow-indigo-500/30 transition hover:bg-indigo-800 hover:shadow-lg hover:shadow-indigo-500/40 sm:w-auto"
-              >
-                + Book Appointment
-              </button>
-            )}
-          </div>
-
-          {/* View Mode Switcher */}
-          <div className="mb-6 flex gap-2 rounded-xl border border-slate-200 bg-white p-1">
-            <button
-              onClick={() => setViewMode("dashboard")}
-              className={`flex-1 rounded-lg px-4 py-2 text-sm font-medium transition ${
-                viewMode === "dashboard"
-                  ? "bg-indigo-600 text-white"
-                  : "text-slate-700 hover:bg-slate-100"
-              }`}
-            >
-              Dashboard
-            </button>
-            <button
-              onClick={() => setViewMode("calendar")}
-              className={`flex-1 rounded-lg px-4 py-2 text-sm font-medium transition ${
-                viewMode === "calendar"
-                  ? "bg-indigo-600 text-white"
-                  : "text-slate-700 hover:bg-slate-100"
-              }`}
-            >
-              Calendar
-            </button>
-            <button
-              onClick={() => setViewMode("list")}
-              className={`flex-1 rounded-lg px-4 py-2 text-sm font-medium transition ${
-                viewMode === "list"
-                  ? "bg-indigo-600 text-white"
-                  : "text-slate-700 hover:bg-slate-100"
-              }`}
-            >
-              List
-            </button>
+            <div className="flex items-center gap-3">
+              {/* View Mode Toggle */}
+              <div className="inline-flex rounded-xl border border-slate-200 bg-white p-1 shadow-sm">
+                <button
+                  onClick={() => {
+                    navigate("/appointments");
+                    setViewMode("dashboard");
+                  }}
+                  className={`rounded-lg px-3 py-1.5 text-xs font-semibold transition-all ${
+                    viewMode === "dashboard"
+                      ? "bg-indigo-600 text-white shadow-sm"
+                      : "text-slate-600 hover:bg-slate-50"
+                  }`}
+                  title="Dashboard view"
+                >
+                  <span className="hidden sm:inline">Dashboard</span>
+                  <span className="sm:hidden">Dash</span>
+                </button>
+                <button
+                  onClick={() => {
+                    navigate("/appointments/calendar");
+                    setViewMode("calendar");
+                  }}
+                  className={`rounded-lg px-3 py-1.5 text-xs font-semibold transition-all ${
+                    viewMode === "calendar"
+                      ? "bg-indigo-600 text-white shadow-sm"
+                      : "text-slate-600 hover:bg-slate-50"
+                  }`}
+                  title="Calendar view"
+                >
+                  Calendar
+                </button>
+                <button
+                  onClick={() => {
+                    navigate("/appointments/list");
+                    setViewMode("list");
+                  }}
+                  className={`rounded-lg px-3 py-1.5 text-xs font-semibold transition-all ${
+                    viewMode === "list"
+                      ? "bg-indigo-600 text-white shadow-sm"
+                      : "text-slate-600 hover:bg-slate-50"
+                  }`}
+                  title="List view"
+                >
+                  List
+                </button>
+              </div>
+              {hasPermission(PERMISSIONS.APPOINTMENTS_CREATE) && (
+                <button
+                  onClick={() => setShowBookingModal(true)}
+                  className="rounded-xl bg-gradient-to-r from-indigo-600 to-indigo-700 px-4 py-2 text-sm font-semibold text-white shadow-md shadow-indigo-500/30 transition-all hover:from-indigo-700 hover:to-indigo-800 hover:shadow-lg hover:shadow-indigo-500/40"
+                >
+                  <span className="hidden sm:inline">+ Book Appointment</span>
+                  <span className="sm:hidden">+ Book</span>
+                </button>
+              )}
+            </div>
           </div>
 
           {/* Dashboard View */}
@@ -627,14 +727,294 @@ function Appointments() {
             </>
           )}
 
-          {/* Calendar View - Placeholder */}
+          {/* Calendar View */}
           {viewMode === "calendar" && (
-            <div className="mb-6 rounded-xl border border-slate-200 bg-white p-8 text-center">
-              <p className="text-slate-600">Calendar view coming soon</p>
+            <div className="space-y-6">
+              {/* Enhanced Calendar Header with Stats */}
+              <div className="rounded-2xl border border-slate-200 bg-gradient-to-br from-white to-slate-50/50 p-6 shadow-sm">
+                <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+                  {/* Navigation Controls */}
+                  <div className="flex items-center gap-3">
+                    <button
+                      onClick={() => {
+                        const newDate = new Date(currentMonth);
+                        newDate.setMonth(newDate.getMonth() - 1);
+                        setCurrentMonth(newDate);
+                      }}
+                      className="flex h-10 w-10 items-center justify-center rounded-xl border border-slate-300 bg-white text-slate-700 shadow-sm transition-all hover:border-indigo-400 hover:bg-indigo-50 hover:text-indigo-700 hover:shadow-md"
+                      title="Previous month"
+                    >
+                      <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M15 19l-7-7 7-7" />
+                      </svg>
+                    </button>
+                    <div className="flex flex-col">
+                      <h2 className="text-2xl font-bold text-slate-900">
+                        {new Date(currentMonth).toLocaleDateString("en-US", { month: "long", year: "numeric" })}
+                      </h2>
+                      <p className="text-xs text-slate-500">
+                        {appointments.filter(apt => {
+                          const aptDate = new Date(apt.appointmentDate);
+                          return aptDate.getMonth() === currentMonth.getMonth() && 
+                                 aptDate.getFullYear() === currentMonth.getFullYear();
+                        }).length} appointments this month
+                      </p>
+                    </div>
+                    <button
+                      onClick={() => {
+                        const newDate = new Date(currentMonth);
+                        newDate.setMonth(newDate.getMonth() + 1);
+                        setCurrentMonth(newDate);
+                      }}
+                      className="flex h-10 w-10 items-center justify-center rounded-xl border border-slate-300 bg-white text-slate-700 shadow-sm transition-all hover:border-indigo-400 hover:bg-indigo-50 hover:text-indigo-700 hover:shadow-md"
+                      title="Next month"
+                    >
+                      <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M9 5l7 7-7 7" />
+                      </svg>
+                    </button>
+                  </div>
+                  
+                  {/* Quick Actions */}
+                  <div className="flex items-center gap-2">
+                    <button
+                      onClick={() => setCurrentMonth(new Date())}
+                      className="rounded-xl border border-indigo-300 bg-gradient-to-r from-indigo-600 to-indigo-700 px-4 py-2 text-sm font-semibold text-white shadow-md shadow-indigo-500/30 transition-all hover:from-indigo-700 hover:to-indigo-800 hover:shadow-lg hover:shadow-indigo-500/40"
+                    >
+                      Today
+                    </button>
+                    {hasPermission(PERMISSIONS.APPOINTMENTS_CREATE) && (
+                      <button
+                        onClick={() => setShowBookingModal(true)}
+                        className="rounded-xl border border-indigo-300 bg-white px-4 py-2 text-sm font-semibold text-indigo-700 shadow-sm transition-all hover:bg-indigo-50 hover:shadow-md"
+                      >
+                        <span className="hidden sm:inline">+ New Appointment</span>
+                        <span className="sm:hidden">+ New</span>
+                      </button>
+                    )}
+                  </div>
+                </div>
+
+                {/* Month Stats */}
+                <div className="mt-6 grid grid-cols-2 gap-3 sm:grid-cols-4">
+                  {(() => {
+                    const monthAppointments = appointments.filter(apt => {
+                      const aptDate = new Date(apt.appointmentDate);
+                      return aptDate.getMonth() === currentMonth.getMonth() && 
+                             aptDate.getFullYear() === currentMonth.getFullYear();
+                    });
+                    const scheduled = monthAppointments.filter(a => a.status === "scheduled").length;
+                    const completed = monthAppointments.filter(a => a.status === "completed").length;
+                    const cancelled = monthAppointments.filter(a => a.status === "cancelled").length;
+                    const todayCount = appointments.filter(apt => {
+                      const aptDate = new Date(apt.appointmentDate).toISOString().split('T')[0];
+                      return aptDate === new Date().toISOString().split('T')[0];
+                    }).length;
+
+                    return (
+                      <>
+                        <div className="rounded-xl border border-blue-200 bg-gradient-to-br from-blue-50 to-blue-100/50 p-3">
+                          <p className="text-xs font-medium text-blue-700">Scheduled</p>
+                          <p className="mt-1 text-xl font-bold text-blue-900">{scheduled}</p>
+                        </div>
+                        <div className="rounded-xl border border-emerald-200 bg-gradient-to-br from-emerald-50 to-emerald-100/50 p-3">
+                          <p className="text-xs font-medium text-emerald-700">Completed</p>
+                          <p className="mt-1 text-xl font-bold text-emerald-900">{completed}</p>
+                        </div>
+                        <div className="rounded-xl border border-rose-200 bg-gradient-to-br from-rose-50 to-rose-100/50 p-3">
+                          <p className="text-xs font-medium text-rose-700">Cancelled</p>
+                          <p className="mt-1 text-xl font-bold text-rose-900">{cancelled}</p>
+                        </div>
+                        <div className="rounded-xl border border-indigo-200 bg-gradient-to-br from-indigo-50 to-indigo-100/50 p-3">
+                          <p className="text-xs font-medium text-indigo-700">Today</p>
+                          <p className="mt-1 text-xl font-bold text-indigo-900">{todayCount}</p>
+                        </div>
+                      </>
+                    );
+                  })()}
+                </div>
+              </div>
+
+              {/* Modern Calendar Grid */}
+              <div className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-lg">
+                {/* Enhanced Day Headers */}
+                <div className="grid grid-cols-7 border-b-2 border-slate-200 bg-gradient-to-b from-slate-50 to-white">
+                  {["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"].map((day) => (
+                    <div 
+                      key={day} 
+                      className="border-r border-slate-200 p-4 text-center last:border-r-0"
+                    >
+                      <div className="text-xs font-bold uppercase tracking-wider text-slate-500">
+                        {day}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+
+                {/* Enhanced Calendar Days */}
+                <div className="grid grid-cols-7 divide-x divide-y divide-slate-200">
+                  {getCalendarDays().map((day, idx) => {
+                    const dayDate = new Date(day.year, day.month, day.date);
+                    const dayString = dayDate.toISOString().split('T')[0];
+                    const dayAppointments = appointments.filter(apt => {
+                      const aptDate = new Date(apt.appointmentDate).toISOString().split('T')[0];
+                      return aptDate === dayString;
+                    });
+                    const isToday = dayString === new Date().toISOString().split('T')[0];
+                    const isCurrentMonth = day.isCurrentMonth;
+                    const isWeekend = dayDate.getDay() === 0 || dayDate.getDay() === 6;
+
+                    return (
+                      <div
+                        key={idx}
+                        className={`relative min-h-[140px] p-3 transition-colors ${
+                          !isCurrentMonth 
+                            ? "bg-slate-50/30" 
+                            : isWeekend 
+                            ? "bg-slate-50/50" 
+                            : "bg-white"
+                        } ${isToday ? "bg-gradient-to-br from-indigo-50/80 to-indigo-100/40" : ""} hover:bg-slate-50/80`}
+                      >
+                        {/* Date Number */}
+                        <div className="mb-2 flex items-center justify-between">
+                          <span className={`text-sm font-semibold ${
+                            !isCurrentMonth 
+                              ? "text-slate-400" 
+                              : isToday 
+                              ? "flex h-7 w-7 items-center justify-center rounded-full bg-indigo-600 text-white" 
+                              : "text-slate-900"
+                          }`}>
+                            {isToday ? day.date : day.date}
+                          </span>
+                          {dayAppointments.length > 0 && (
+                            <span className="flex h-5 w-5 items-center justify-center rounded-full bg-indigo-100 text-xs font-bold text-indigo-700">
+                              {dayAppointments.length}
+                            </span>
+                          )}
+                        </div>
+
+                        {/* Appointments List */}
+                        <div className="space-y-1.5">
+                          {dayAppointments.slice(0, 3).map((apt) => {
+                            const getStatusStyles = () => {
+                              switch (apt.status) {
+                                case "completed":
+                                  return "bg-emerald-50 border-emerald-200 text-emerald-900 hover:bg-emerald-100";
+                                case "cancelled":
+                                  return "bg-rose-50 border-rose-200 text-rose-900 hover:bg-rose-100";
+                                case "no-show":
+                                  return "bg-amber-50 border-amber-200 text-amber-900 hover:bg-amber-100";
+                                default:
+                                  return "bg-blue-50 border-blue-200 text-blue-900 hover:bg-blue-100";
+                              }
+                            };
+
+                            return (
+                              <div
+                                key={apt._id}
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  openDetailsModal(apt);
+                                }}
+                                className={`group cursor-pointer rounded-lg border px-2 py-1.5 text-xs transition-all shadow-sm hover:shadow-md ${getStatusStyles()}`}
+                                title={`${apt.appointmentTime} - ${apt.patientId.name} - Dr. ${apt.doctorId.name}`}
+                              >
+                                <div className="flex items-center justify-between gap-1">
+                                  <span className="font-bold">{apt.appointmentTime}</span>
+                                  {apt.priority && apt.priority !== "normal" && (
+                                    <span className={`rounded px-1 text-[10px] font-semibold ${
+                                      apt.priority === "urgent" 
+                                        ? "bg-rose-200 text-rose-800"
+                                        : apt.priority === "high"
+                                        ? "bg-orange-200 text-orange-800"
+                                        : "bg-slate-200 text-slate-800"
+                                    }`}>
+                                      {apt.priority.charAt(0).toUpperCase()}
+                                    </span>
+                                  )}
+                                </div>
+                                <div className="mt-0.5 truncate font-medium">
+                                  {apt.patientId.name}
+                                </div>
+                                <div className="mt-0.5 truncate text-[10px] opacity-75">
+                                  Dr. {apt.doctorId.name.split(' ')[0]}
+                                </div>
+                              </div>
+                            );
+                          })}
+                          {dayAppointments.length > 3 && (
+                            <button
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                setFilterDate(dayString);
+                                setViewMode("list");
+                              }}
+                              className="w-full rounded-lg border border-dashed border-slate-300 bg-slate-50 px-2 py-1.5 text-xs font-medium text-slate-600 transition-all hover:border-indigo-400 hover:bg-indigo-50 hover:text-indigo-700"
+                            >
+                              +{dayAppointments.length - 3} more
+                            </button>
+                          )}
+                        </div>
+
+                        {/* Quick Add Button */}
+                        {hasPermission(PERMISSIONS.APPOINTMENTS_CREATE) && isCurrentMonth && dayAppointments.length === 0 && (
+                          <button
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              setBookingForm(prev => ({
+                                ...prev,
+                                appointmentDate: dayString,
+                                appointmentTime: "",
+                              }));
+                              setShowBookingModal(true);
+                            }}
+                            className="mt-2 w-full rounded-lg border border-dashed border-slate-300 bg-white px-2 py-1.5 text-xs font-medium text-slate-500 transition-all hover:border-indigo-400 hover:bg-indigo-50 hover:text-indigo-700"
+                            title="Click to book appointment on this date"
+                          >
+                            + Add
+                          </button>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+
+              {/* Enhanced Legend */}
+              <div className="rounded-2xl border border-slate-200 bg-gradient-to-br from-white to-slate-50/50 p-5 shadow-sm">
+                <div className="flex flex-wrap items-center gap-6">
+                  <div className="flex items-center gap-2">
+                    <span className="text-sm font-semibold text-slate-700">Status Legend:</span>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <div className="h-4 w-4 rounded-lg bg-blue-100 border border-blue-200"></div>
+                    <span className="text-sm text-slate-700">Scheduled</span>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <div className="h-4 w-4 rounded-lg bg-emerald-100 border border-emerald-200"></div>
+                    <span className="text-sm text-slate-700">Completed</span>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <div className="h-4 w-4 rounded-lg bg-rose-100 border border-rose-200"></div>
+                    <span className="text-sm text-slate-700">Cancelled</span>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <div className="h-4 w-4 rounded-lg bg-amber-100 border border-amber-200"></div>
+                    <span className="text-sm text-slate-700">No Show</span>
+                  </div>
+                  <div className="ml-auto flex items-center gap-2">
+                    <span className="text-xs text-slate-500">Priority:</span>
+                    <span className="rounded bg-rose-200 px-1.5 py-0.5 text-[10px] font-semibold text-rose-800">U</span>
+                    <span className="text-xs text-slate-600">Urgent</span>
+                    <span className="rounded bg-orange-200 px-1.5 py-0.5 text-[10px] font-semibold text-orange-800">H</span>
+                    <span className="text-xs text-slate-600">High</span>
+                  </div>
+                </div>
+              </div>
             </div>
           )}
 
-          {/* Filters - Show for List and Calendar views */}
+          {/* Filters - Show for List and Calendar views only */}
           {(viewMode === "list" || viewMode === "calendar") && (
             <div className="mb-6 grid grid-cols-1 gap-4 rounded-xl border border-slate-200 bg-white p-4 sm:grid-cols-2 lg:grid-cols-4">
               <div>

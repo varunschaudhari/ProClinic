@@ -108,6 +108,9 @@ function Sidebar() {
     if (path.startsWith("/opd")) {
       setExpandedMenus((prev) => new Set(prev).add("OPD"));
     }
+    if (path.startsWith("/appointments")) {
+      setExpandedMenus((prev) => new Set(prev).add("Appointments"));
+    }
   }, [location.pathname]);
 
   const toggleSubmenu = (menuName: string) => {
@@ -208,6 +211,7 @@ function Sidebar() {
         { name: "Register Patient", path: "/opd/register" },
         { name: "Queue", path: "/opd/queue" },
         { name: "OPD Records", path: "/opd" },
+        { name: "OPD Billing", path: "/opd/billing" },
       ],
     },
     {
@@ -247,8 +251,13 @@ function Sidebar() {
           />
         </svg>
       ),
-      path: "/appointments",
+      path: "/appointments/dashboard",
       section: "main",
+      children: [
+        { name: "Dashboard", path: "/appointments/dashboard" },
+        { name: "List", path: "/appointments/list" },
+        { name: "Calendar", path: "/appointments/calendar" },
+      ],
     },
     {
       name: "Doctor Schedules",
@@ -527,9 +536,13 @@ function Sidebar() {
                               {item.children
                                 ?.filter((child) => canAccessRoute(child.path))
                                 .map((child) => {
-                                  const isChildItemActive =
-                                    location.pathname === child.path ||
-                                    location.pathname.startsWith(child.path + "/");
+                                  // Check exact match first
+                                  const isExactMatch = location.pathname === child.path;
+                                  // For startsWith check, only apply if the current path is a child of the menu item path
+                                  // Exclude parent paths like "/opd" and "/ipd" from matching their children
+                                  const isParentPath = child.path === "/opd" || child.path === "/ipd" || child.path === "/appointments";
+                                  const isChildItemActive = isExactMatch || 
+                                    (!isParentPath && location.pathname.startsWith(child.path + "/"));
                                   return (
                                     <li key={child.path}>
                                       <Link

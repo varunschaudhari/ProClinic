@@ -1,3 +1,4 @@
+import mongoose from "mongoose";
 import Patient from "../models/Patient.js";
 import Sequence from "../models/Sequence.js";
 import OPD from "../models/OPD.js";
@@ -78,18 +79,91 @@ export const getPatients = async (req, res) => {
     // Get patient count from sequence
     const patientCount = await getPatientCount();
 
+    // Get visit counts for each patient (OPD + IPD)
+    // Use Promise.all with countDocuments for reliability
+    const patientsWithVisitCounts = await Promise.all(
+      patients.map(async (patient) => {
+        try {
+          // Use countDocuments directly with patient._id (Mongoose handles ObjectId conversion)
+          const opdCount = await OPD.countDocuments({ patientId: patient._id });
+          const ipdCount = await IPD.countDocuments({ patientId: patient._id });
+          const totalVisits = opdCount + ipdCount;
+          
+          // Convert to plain object and add visit counts
+          const patientObj = patient.toObject ? patient.toObject() : { ...patient };
+          patientObj.visitCount = totalVisits;
+          patientObj.opdCount = opdCount;
+          patientObj.ipdCount = ipdCount;
+          
+          // Debug logging for first patient
+          if (patients.indexOf(patient) === 0) {
+            logInfo("Sample visit count calculation", {
+              patientId: patient.patientId,
+              patientName: patient.name,
+              patient_id: patient._id ? patient._id.toString() : String(patient._id),
+              opdCount,
+              ipdCount,
+              totalVisits
+            });
+          }
+          
+          return patientObj;
+        } catch (error) {
+          logError("Error counting visits for patient", error, { 
+            patientId: patient._id ? patient._id.toString() : String(patient._id),
+            patientName: patient.name
+          });
+          // Return patient with zero counts on error
+          const patientObj = patient.toObject ? patient.toObject() : { ...patient };
+          patientObj.visitCount = 0;
+          patientObj.opdCount = 0;
+          patientObj.ipdCount = 0;
+          return patientObj;
+        }
+      })
+    );
+
+    // Log visit count summary for debugging
+    const visitCountSummary = patientsWithVisitCounts.map(p => ({
+      patientId: p.patientId,
+      name: p.name,
+      visitCount: p.visitCount,
+      opdCount: p.opdCount,
+      ipdCount: p.ipdCount,
+      _id: p._id ? p._id.toString() : String(p._id)
+    }));
+    
+    // Verify visit counts are being set correctly
+    const patientsWithVisits = visitCountSummary.filter(p => p.visitCount > 0);
+    const totalVisitsSum = visitCountSummary.reduce((sum, p) => sum + (p.visitCount || 0), 0);
+    
     logInfo("Patients fetched", {
       userId: req.user.id,
       count: patients.length,
       patientCount: patientCount,
       filters: { status, isActive, search },
+      visitCounts: visitCountSummary.slice(0, 5), // Log first 5 for debugging
+      patientsWithVisits: patientsWithVisits.length,
+      totalVisitsSum: totalVisitsSum
     });
+    
+    // Verify sample patient has visitCount in response
+    if (patientsWithVisitCounts.length > 0) {
+      const samplePatient = patientsWithVisitCounts[0];
+      logInfo("Sample patient response", {
+        hasVisitCount: 'visitCount' in samplePatient,
+        visitCount: samplePatient.visitCount,
+        visitCountType: typeof samplePatient.visitCount,
+        opdCount: samplePatient.opdCount,
+        ipdCount: samplePatient.ipdCount
+      });
+    }
 
     res.status(200).json({
       success: true,
       count: patients.length,
       patientCount: patientCount, // Total patient count from sequence
-      data: { patients },
+      data: { patients: patientsWithVisitCounts },
     });
   } catch (error) {
     logError("Get patients error", error, {

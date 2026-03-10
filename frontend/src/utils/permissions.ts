@@ -150,6 +150,7 @@ export const MENU_PERMISSIONS: Record<string, string> = {
   "/opd": PERMISSIONS.OPD_VIEW,
   "/opd/dashboard": PERMISSIONS.OPD_VIEW,
   "/opd/register": PERMISSIONS.OPD_CREATE,
+  "/opd/billing": PERMISSIONS.OPD_BILLING,
   "/ipd": PERMISSIONS.IPD_VIEW,
   "/ipd/dashboard": PERMISSIONS.IPD_VIEW,
   "/ipd/admit": PERMISSIONS.IPD_CREATE,

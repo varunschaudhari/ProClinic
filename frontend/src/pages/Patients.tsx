@@ -42,6 +42,9 @@ type Patient = {
   };
   isActive: boolean;
   createdAt: string;
+  visitCount?: number;
+  opdCount?: number;
+  ipdCount?: number;
 };
 
 type PatientForm = {
@@ -168,6 +171,26 @@ function Patients() {
       if (statusFilter) params.status = statusFilter;
       const response = await patientsAPI.getAll(params);
       if (response.success) {
+        // Debug: Log visit counts to verify data
+        if (response.data.patients && response.data.patients.length > 0) {
+          const samplePatient = response.data.patients[0];
+          console.log("Sample patient with visit counts:", {
+            name: samplePatient.name,
+            patientId: samplePatient.patientId,
+            visitCount: samplePatient.visitCount,
+            opdCount: samplePatient.opdCount,
+            ipdCount: samplePatient.ipdCount,
+            visitCountType: typeof samplePatient.visitCount,
+            hasVisitCount: 'visitCount' in samplePatient
+          });
+          console.log("All patient visit counts:", response.data.patients.map((p: Patient) => ({
+            name: p.name,
+            patientId: p.patientId,
+            visitCount: p.visitCount,
+            opdCount: p.opdCount,
+            ipdCount: p.ipdCount
+          })));
+        }
         setPatients(response.data.patients);
       } else {
         showError("Failed to fetch patients");
@@ -527,6 +550,9 @@ function Patients() {
                     <th className="hidden px-4 py-3 text-left text-xs font-bold uppercase tracking-wider text-slate-600 lg:table-cell sm:px-6 sm:py-4">
                       Blood Group
                     </th>
+                    <th className="px-4 py-3 text-left text-xs font-bold uppercase tracking-wider text-slate-600 sm:px-6 sm:py-4">
+                      Total Visits
+                    </th>
                     <th className="hidden px-4 py-3 text-left text-xs font-bold uppercase tracking-wider text-slate-600 lg:table-cell sm:px-6 sm:py-4">
                       Status
                     </th>
@@ -538,7 +564,7 @@ function Patients() {
                 <tbody className="divide-y divide-slate-100 bg-white">
                   {filteredPatients.length === 0 && !searchQuery && !statusFilter ? (
                     <tr>
-                      <td colSpan={7} className="px-6 py-16 text-center">
+                      <td colSpan={8} className="px-6 py-16 text-center">
                         <div className="flex flex-col items-center justify-center">
                           <svg
                             className="mb-4 h-12 w-12 text-slate-400"
@@ -564,7 +590,7 @@ function Patients() {
                     </tr>
                   ) : filteredPatients.length === 0 && (searchQuery || statusFilter) ? (
                     <tr>
-                      <td colSpan={7} className="px-6 py-16 text-center">
+                      <td colSpan={8} className="px-6 py-16 text-center">
                         <div className="flex flex-col items-center justify-center">
                           <svg
                             className="mb-4 h-12 w-12 text-slate-400"
@@ -662,6 +688,40 @@ function Patients() {
                           ) : (
                             <span className="text-xs text-slate-400">-</span>
                           )}
+                        </td>
+                        <td className="whitespace-nowrap px-4 py-3 sm:px-6 sm:py-4">
+                          <div className="flex flex-col gap-1 sm:flex-row sm:items-center sm:gap-2">
+                            <span className="inline-flex items-center gap-1 rounded-lg border border-indigo-200 bg-indigo-50 px-2 py-1 text-xs font-semibold text-indigo-700">
+                              <svg
+                                className="h-3.5 w-3.5"
+                                fill="none"
+                                viewBox="0 0 24 24"
+                                stroke="currentColor"
+                              >
+                                <path
+                                  strokeLinecap="round"
+                                  strokeLinejoin="round"
+                                  strokeWidth={2}
+                                  d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"
+                                />
+                              </svg>
+                              {patient.visitCount !== undefined ? patient.visitCount : 0}
+                            </span>
+                            {(patient.opdCount || patient.ipdCount) ? (
+                              <div className="flex flex-wrap gap-1 text-[10px] text-slate-500">
+                                {patient.opdCount > 0 && (
+                                  <span className="rounded bg-blue-50 px-1 py-0.5 text-blue-700">
+                                    OPD: {patient.opdCount}
+                                  </span>
+                                )}
+                                {patient.ipdCount > 0 && (
+                                  <span className="rounded bg-purple-50 px-1 py-0.5 text-purple-700">
+                                    IPD: {patient.ipdCount}
+                                  </span>
+                                )}
+                              </div>
+                            ) : null}
+                          </div>
                         </td>
                         <td className="hidden whitespace-nowrap px-4 py-3 lg:table-cell sm:px-6 sm:py-4">
                           <span

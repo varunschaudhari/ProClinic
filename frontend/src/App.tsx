@@ -15,6 +15,7 @@ import OPDRegister from "./pages/OPDRegister";
 import OPDQueue from "./pages/OPDQueue";
 import OPDList from "./pages/OPDList";
 import OPDDetails from "./pages/OPDDetails";
+import OPDBilling from "./pages/OPDBilling";
 import IPDDashboard from "./pages/IPDDashboard";
 import IPDAdmit from "./pages/IPDAdmit";
 import IPDList from "./pages/IPDList";
@@ -155,7 +156,31 @@ function App() {
           path="/appointments"
           element={
             <ProtectedRoute>
-              <Appointments />
+              <Navigate to="/appointments/dashboard" replace />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/appointments/dashboard"
+          element={
+            <ProtectedRoute>
+              <Appointments viewMode="dashboard" />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/appointments/list"
+          element={
+            <ProtectedRoute>
+              <Appointments viewMode="list" />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/appointments/calendar"
+          element={
+            <ProtectedRoute>
+              <Appointments viewMode="calendar" />
             </ProtectedRoute>
           }
         />
@@ -196,6 +221,14 @@ function App() {
           element={
             <ProtectedRoute>
               <OPDList />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/opd/billing"
+          element={
+            <ProtectedRoute>
+              <OPDBilling />
             </ProtectedRoute>
           }
         />
