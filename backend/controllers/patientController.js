@@ -80,6 +80,7 @@ export const getPatients = async (req, res) => {
     const patientCount = await getPatientCount();
 
     // Get visit counts for each patient (OPD + IPD)
+    // Also determine patientType (inpatient/outpatient) based on active IPD records
     // Use Promise.all with countDocuments for reliability
     const patientsWithVisitCounts = await Promise.all(
       patients.map(async (patient) => {
@@ -89,11 +90,22 @@ export const getPatients = async (req, res) => {
           const ipdCount = await IPD.countDocuments({ patientId: patient._id });
           const totalVisits = opdCount + ipdCount;
           
-          // Convert to plain object and add visit counts
+          // Check if patient has active IPD records (admitted or under-treatment)
+          const activeIPDCount = await IPD.countDocuments({
+            patientId: patient._id,
+            status: { $in: ["admitted", "under-treatment"] }
+          });
+          
+          // Determine patientType: inpatient if has active IPD, otherwise outpatient
+          const patientType = activeIPDCount > 0 ? "inpatient" : "outpatient";
+          
+          // Convert to plain object and add visit counts and patientType
           const patientObj = patient.toObject ? patient.toObject() : { ...patient };
           patientObj.visitCount = totalVisits;
           patientObj.opdCount = opdCount;
           patientObj.ipdCount = ipdCount;
+          patientObj.patientType = patientType;
+          patientObj.isInpatient = activeIPDCount > 0; // Boolean flag for convenience
           
           // Debug logging for first patient
           if (patients.indexOf(patient) === 0) {
@@ -103,7 +115,9 @@ export const getPatients = async (req, res) => {
               patient_id: patient._id ? patient._id.toString() : String(patient._id),
               opdCount,
               ipdCount,
-              totalVisits
+              totalVisits,
+              patientType,
+              activeIPDCount
             });
           }
           
@@ -118,6 +132,8 @@ export const getPatients = async (req, res) => {
           patientObj.visitCount = 0;
           patientObj.opdCount = 0;
           patientObj.ipdCount = 0;
+          patientObj.patientType = "outpatient";
+          patientObj.isInpatient = false;
           return patientObj;
         }
       })
@@ -191,9 +207,20 @@ export const getPatient = async (req, res) => {
       });
     }
 
+    // Check if patient has active IPD records to determine patientType
+    const activeIPDCount = await IPD.countDocuments({
+      patientId: patient._id,
+      status: { $in: ["admitted", "under-treatment"] }
+    });
+    
+    // Convert to plain object and add computed patientType
+    const patientObj = patient.toObject ? patient.toObject() : { ...patient };
+    patientObj.patientType = activeIPDCount > 0 ? "inpatient" : "outpatient";
+    patientObj.isInpatient = activeIPDCount > 0;
+
     res.status(200).json({
       success: true,
-      data: { patient },
+      data: { patient: patientObj },
     });
   } catch (error) {
     logError("Get patient error", error, {

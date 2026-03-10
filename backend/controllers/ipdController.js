@@ -4,6 +4,27 @@ import Room from "../models/Room.js";
 import User from "../models/User.js";
 import { logInfo, logError } from "../config/logger.js";
 
+// Helper function to update patientType based on active IPD records
+const updatePatientType = async (patientId) => {
+  try {
+    // Check if patient has active IPD records (admitted or under-treatment)
+    const activeIPDCount = await IPD.countDocuments({
+      patientId: patientId,
+      status: { $in: ["admitted", "under-treatment"] }
+    });
+    
+    // Update patientType: inpatient if has active IPD, otherwise outpatient
+    const patientType = activeIPDCount > 0 ? "inpatient" : "outpatient";
+    
+    await Patient.findByIdAndUpdate(patientId, { patientType });
+    
+    return patientType;
+  } catch (error) {
+    logError("Error updating patientType", error, { patientId });
+    return null;
+  }
+};
+
 // @desc    Get all IPD records
 // @route   GET /api/ipd
 // @access  Private
@@ -276,6 +297,9 @@ export const createIPDRecord = async (req, res) => {
       }
     }
 
+    // Update patientType to "inpatient" since patient is now admitted
+    await updatePatientType(patient._id);
+
     // Populate before sending response
     await ipdRecord.populate([
       { path: "patientId", select: "name patientId phone email dateOfBirth gender" },
@@ -433,6 +457,11 @@ export const updateIPDRecord = async (req, res) => {
     ipdRecord.updatedBy = req.user.id;
     await ipdRecord.save();
 
+    // Update patientType if status was changed (affects inpatient/outpatient status)
+    if (status) {
+      await updatePatientType(ipdRecord.patientId);
+    }
+
     // Populate before sending response
     await ipdRecord.populate([
       { path: "patientId", select: "name patientId phone email dateOfBirth gender" },
@@ -527,6 +556,9 @@ export const dischargePatient = async (req, res) => {
     }
 
     await ipdRecord.save();
+
+    // Update patientType - check if patient still has other active IPD records
+    await updatePatientType(ipdRecord.patientId);
 
     // Populate before sending response
     await ipdRecord.populate([

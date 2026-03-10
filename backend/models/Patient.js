@@ -132,6 +132,12 @@ const patientSchema = new mongoose.Schema(
       type: Boolean,
       default: true,
     },
+    patientType: {
+      type: String,
+      enum: ["outpatient", "inpatient"],
+      default: "outpatient",
+      // This will be auto-updated based on active IPD records
+    },
   },
   {
     timestamps: true,
@@ -164,6 +170,8 @@ patientSchema.pre("save", async function (next) {
 // Index for faster queries
 patientSchema.index({ status: 1 });
 patientSchema.index({ isActive: 1, status: 1 });
+patientSchema.index({ patientType: 1 });
+patientSchema.index({ isActive: 1, patientType: 1 });
 
 const Patient = mongoose.model("Patient", patientSchema);
 
