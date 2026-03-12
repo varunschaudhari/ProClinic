@@ -27,6 +27,7 @@ export const getOPDRecords = async (req, res) => {
     const {
       patientId,
       doctorId,
+      departmentId,
       status,
       date,
       startDate,
@@ -39,6 +40,7 @@ export const getOPDRecords = async (req, res) => {
 
     if (patientId) query.patientId = patientId;
     if (doctorId) query.doctorId = doctorId;
+    if (departmentId) query.departmentId = departmentId;
     if (status) query.status = status;
     if (paymentStatus) query.paymentStatus = paymentStatus;
 
@@ -60,6 +62,7 @@ export const getOPDRecords = async (req, res) => {
     const opdRecords = await OPD.find(query)
       .populate("patientId", "name patientId phone email dateOfBirth gender")
       .populate("doctorId", "name email")
+      .populate("departmentId", "name code")
       .populate("createdBy", "name email")
       .sort({ visitDate: -1, queueNumber: 1 })
       .limit(parseInt(req.query.limit) || 100);
@@ -91,7 +94,7 @@ export const getOPDRecords = async (req, res) => {
 // @access  Private
 export const getTodayOPD = async (req, res) => {
   try {
-    const { doctorId } = req.query;
+    const { doctorId, departmentId } = req.query;
 
     const today = new Date();
     today.setHours(0, 0, 0, 0);
@@ -103,10 +106,12 @@ export const getTodayOPD = async (req, res) => {
     };
 
     if (doctorId) query.doctorId = doctorId;
+    if (departmentId) query.departmentId = departmentId;
 
     const opdRecords = await OPD.find(query)
       .populate("patientId", "name patientId phone email dateOfBirth gender")
       .populate("doctorId", "name email")
+      .populate("departmentId", "name code")
       .sort({ queueNumber: 1, visitDate: 1 });
 
     // Get statistics
@@ -230,6 +235,7 @@ export const createOPDRecord = async (req, res) => {
     const {
       patientId,
       doctorId,
+      departmentId,
       visitDate,
       visitTime,
       chiefComplaint,
@@ -273,6 +279,7 @@ export const createOPDRecord = async (req, res) => {
     const opdRecord = await OPD.create({
       patientId,
       doctorId,
+      departmentId: departmentId || null,
       visitDate: visitDate || new Date(),
       visitTime: visitTime || new Date().toLocaleTimeString("en-IN", {
         hour: "2-digit",
@@ -290,7 +297,8 @@ export const createOPDRecord = async (req, res) => {
     // Populate and return
     const populatedRecord = await OPD.findById(opdRecord._id)
       .populate("patientId", "name patientId phone email dateOfBirth gender")
-      .populate("doctorId", "name email");
+      .populate("doctorId", "name email")
+      .populate("departmentId", "name code");
 
     logInfo("OPD record created", {
       createdBy: req.user.id,
@@ -334,6 +342,7 @@ export const updateOPDRecord = async (req, res) => {
       visitDate,
       visitTime,
       status,
+      departmentId,
       chiefComplaint,
       diagnosis,
       treatment,
@@ -366,6 +375,7 @@ export const updateOPDRecord = async (req, res) => {
     if (visitDate) opdRecord.visitDate = visitDate;
     if (visitTime) opdRecord.visitTime = visitTime;
     if (status) opdRecord.status = status;
+    if (departmentId !== undefined) opdRecord.departmentId = departmentId || null;
     if (chiefComplaint !== undefined) opdRecord.chiefComplaint = chiefComplaint || null;
     if (diagnosis !== undefined) opdRecord.diagnosis = diagnosis || null;
     if (treatment !== undefined) opdRecord.treatment = treatment || null;
@@ -391,6 +401,7 @@ export const updateOPDRecord = async (req, res) => {
     const populatedRecord = await OPD.findById(opdRecord._id)
       .populate("patientId", "name patientId phone email dateOfBirth gender")
       .populate("doctorId", "name email")
+      .populate("departmentId", "name code")
       .populate("updatedBy", "name email");
 
     logInfo("OPD record updated", {

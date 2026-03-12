@@ -7,6 +7,12 @@ import Users from "./pages/Users";
 import UserDetails from "./pages/UserDetails";
 import Roles from "./pages/Roles";
 import RoleDetails from "./pages/RoleDetails";
+import Departments from "./pages/Departments";
+import DepartmentDetails from "./pages/DepartmentDetails";
+import Services from "./pages/Services";
+import ServiceDetails from "./pages/ServiceDetails";
+import ServiceCategories from "./pages/ServiceCategories";
+import ServiceCategoryDetails from "./pages/ServiceCategoryDetails";
 import Patients from "./pages/Patients";
 import PatientDetails from "./pages/PatientDetails";
 import Appointments from "./pages/Appointments";
@@ -152,7 +158,55 @@ function App() {
               <RoleDetails />
             </ProtectedRoute>
           }
-                  />
+        />
+        <Route
+          path="/departments"
+          element={
+            <ProtectedRoute>
+              <Departments />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/departments/:id"
+          element={
+            <ProtectedRoute>
+              <DepartmentDetails />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/services"
+          element={
+            <ProtectedRoute>
+              <Services />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/services/:id"
+          element={
+            <ProtectedRoute>
+              <ServiceDetails />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/service-categories"
+          element={
+            <ProtectedRoute>
+              <ServiceCategories />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/service-categories/:id"
+          element={
+            <ProtectedRoute>
+              <ServiceCategoryDetails />
+            </ProtectedRoute>
+          }
+        />
         <Route
           path="/patients"
           element={

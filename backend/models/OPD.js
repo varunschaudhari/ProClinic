@@ -20,6 +20,11 @@ const opdSchema = new mongoose.Schema(
       ref: "User",
       required: [true, "Doctor is required"],
     },
+    departmentId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "Department",
+      default: null,
+    },
     visitDate: {
       type: Date,
       required: [true, "Visit date is required"],

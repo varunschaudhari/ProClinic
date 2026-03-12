@@ -22,6 +22,9 @@ import roomRoutes from "./routes/roomRoutes.js";
 import settingsRoutes from "./routes/settingsRoutes.js";
 import wardRoutes from "./routes/wardRoutes.js";
 import otRoutes from "./routes/otRoutes.js";
+import departmentRoutes from "./routes/departmentRoutes.js";
+import serviceRoutes from "./routes/serviceRoutes.js";
+import serviceCategoryRoutes from "./routes/serviceCategoryRoutes.js";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
@@ -94,6 +97,9 @@ app.use("/api/rooms", roomRoutes);
 app.use("/api/settings", settingsRoutes);
 app.use("/api/wards", wardRoutes);
 app.use("/api/ot", otRoutes);
+app.use("/api/departments", departmentRoutes);
+app.use("/api/services", serviceRoutes);
+app.use("/api/service-categories", serviceCategoryRoutes);
 
 // 404 handler
 app.use((req, res) => {

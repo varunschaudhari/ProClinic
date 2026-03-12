@@ -142,6 +142,177 @@ export const rolesAPI = {
   },
 };
 
+// Departments API
+export const departmentsAPI = {
+  getAll: async (params?: { status?: string; search?: string }) => {
+    const queryParams = new URLSearchParams();
+    if (params?.status) queryParams.append("status", params.status);
+    if (params?.search) queryParams.append("search", params.search);
+    const queryString = queryParams.toString();
+    const response = await apiRequest(`/departments${queryString ? `?${queryString}` : ""}`);
+    return response.json();
+  },
+
+  getById: async (id: string) => {
+    const response = await apiRequest(`/departments/${id}`);
+    return response.json();
+  },
+
+  create: async (departmentData: {
+    name: string;
+    code?: string;
+    description?: string;
+    headOfDepartment?: string;
+    status?: "active" | "inactive";
+  }) => {
+    const response = await apiRequest("/departments", {
+      method: "POST",
+      body: JSON.stringify(departmentData),
+    });
+    return response.json();
+  },
+
+  update: async (
+    id: string,
+    departmentData: {
+      name?: string;
+      code?: string;
+      description?: string;
+      headOfDepartment?: string;
+      status?: "active" | "inactive";
+    }
+  ) => {
+    const response = await apiRequest(`/departments/${id}`, {
+      method: "PUT",
+      body: JSON.stringify(departmentData),
+    });
+    return response.json();
+  },
+
+  delete: async (id: string) => {
+    const response = await apiRequest(`/departments/${id}`, {
+      method: "DELETE",
+    });
+    return response.json();
+  },
+};
+
+// Services API
+export const servicesAPI = {
+  getAll: async (params?: { status?: string; categoryId?: string; departmentId?: string; search?: string }) => {
+    const queryParams = new URLSearchParams();
+    if (params?.status) queryParams.append("status", params.status);
+    if (params?.categoryId) queryParams.append("categoryId", params.categoryId);
+    if (params?.departmentId) queryParams.append("departmentId", params.departmentId);
+    if (params?.search) queryParams.append("search", params.search);
+    const queryString = queryParams.toString();
+    const response = await apiRequest(`/services${queryString ? `?${queryString}` : ""}`);
+    return response.json();
+  },
+
+  getById: async (id: string) => {
+    const response = await apiRequest(`/services/${id}`);
+    return response.json();
+  },
+
+  create: async (serviceData: {
+    name: string;
+    code: string;
+    description?: string;
+    categoryId?: string;
+    price: number;
+    duration?: number;
+    status?: "active" | "inactive";
+    departmentId?: string;
+  }) => {
+    const response = await apiRequest("/services", {
+      method: "POST",
+      body: JSON.stringify(serviceData),
+    });
+    return response.json();
+  },
+
+  update: async (
+    id: string,
+    serviceData: {
+      name?: string;
+      code?: string;
+      description?: string;
+      categoryId?: string;
+      price?: number;
+      duration?: number;
+      status?: "active" | "inactive";
+      departmentId?: string;
+    }
+  ) => {
+    const response = await apiRequest(`/services/${id}`, {
+      method: "PUT",
+      body: JSON.stringify(serviceData),
+    });
+    return response.json();
+  },
+
+  delete: async (id: string) => {
+    const response = await apiRequest(`/services/${id}`, {
+      method: "DELETE",
+    });
+    return response.json();
+  },
+};
+
+// Service Categories API
+export const serviceCategoriesAPI = {
+  getAll: async (params?: { status?: string; search?: string }) => {
+    const queryParams = new URLSearchParams();
+    if (params?.status) queryParams.append("status", params.status);
+    if (params?.search) queryParams.append("search", params.search);
+    const queryString = queryParams.toString();
+    const response = await apiRequest(`/service-categories${queryString ? `?${queryString}` : ""}`);
+    return response.json();
+  },
+
+  getById: async (id: string) => {
+    const response = await apiRequest(`/service-categories/${id}`);
+    return response.json();
+  },
+
+  create: async (categoryData: {
+    name: string;
+    code: string;
+    description?: string;
+    status?: "active" | "inactive";
+  }) => {
+    const response = await apiRequest("/service-categories", {
+      method: "POST",
+      body: JSON.stringify(categoryData),
+    });
+    return response.json();
+  },
+
+  update: async (
+    id: string,
+    categoryData: {
+      name?: string;
+      code?: string;
+      description?: string;
+      status?: "active" | "inactive";
+    }
+  ) => {
+    const response = await apiRequest(`/service-categories/${id}`, {
+      method: "PUT",
+      body: JSON.stringify(categoryData),
+    });
+    return response.json();
+  },
+
+  delete: async (id: string) => {
+    const response = await apiRequest(`/service-categories/${id}`, {
+      method: "DELETE",
+    });
+    return response.json();
+  },
+};
+
 // Patients API
 export const patientsAPI = {
   getAll: async (params?: { status?: string; isActive?: boolean; search?: string }) => {

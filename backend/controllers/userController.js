@@ -15,6 +15,7 @@ export const getUsers = async (req, res) => {
     const users = await User.find()
       .select("-password")
       .populate("roles", "name displayName permissions isActive")
+      .populate("departmentId", "name code")
       .sort({ createdAt: -1 });
 
     logInfo("Users fetched", {
@@ -45,7 +46,8 @@ export const getUser = async (req, res) => {
   try {
     const user = await User.findById(req.params.id)
       .select("-password")
-      .populate("roles", "name displayName permissions isActive");
+      .populate("roles", "name displayName permissions isActive")
+      .populate("departmentId", "name code");
 
     if (!user) {
       return res.status(404).json({
@@ -90,7 +92,7 @@ export const createUser = async (req, res) => {
       roles = [];
     }
 
-    const { name, email, password, role } = req.body;
+    const { name, email, password, role, departmentId } = req.body;
 
     // Validate input
     if (!name || !email || !password) {
@@ -144,6 +146,7 @@ export const createUser = async (req, res) => {
       designation: req.body.designation || null,
       gender: req.body.gender || null,
       bloodGroup: req.body.bloodGroup || null,
+      departmentId: departmentId || null,
     };
 
     if (roles && Array.isArray(roles) && roles.length > 0) {
@@ -155,7 +158,8 @@ export const createUser = async (req, res) => {
     // Remove password from response and populate roles
     const userResponse = await User.findById(user._id)
       .select("-password")
-      .populate("roles", "name displayName permissions isActive");
+      .populate("roles", "name displayName permissions isActive")
+      .populate("departmentId", "name code");
 
     logInfo("User created", {
       createdBy: req.user.id,
@@ -206,7 +210,7 @@ export const updateUser = async (req, res) => {
       }
     }
 
-    const { name, email, role, isActive, dateOfBirth, yearsOfExperience, designation, gender, bloodGroup } = req.body;
+    const { name, email, role, isActive, dateOfBirth, yearsOfExperience, designation, gender, bloodGroup, departmentId } = req.body;
 
     let user = await User.findById(req.params.id);
 
@@ -271,13 +275,15 @@ export const updateUser = async (req, res) => {
     if (designation !== undefined) user.designation = designation || null;
     if (gender !== undefined) user.gender = gender || null;
     if (bloodGroup !== undefined) user.bloodGroup = bloodGroup || null;
+    if (departmentId !== undefined) user.departmentId = departmentId || null;
 
     await user.save();
 
     // Get updated user without password and populate roles
     const updatedUser = await User.findById(user._id)
       .select("-password")
-      .populate("roles", "name displayName permissions isActive");
+      .populate("roles", "name displayName permissions isActive")
+      .populate("departmentId", "name code");
 
     logInfo("User updated", {
       updatedBy: req.user.id,

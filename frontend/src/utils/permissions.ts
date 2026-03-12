@@ -100,6 +100,24 @@ export const PERMISSIONS = {
   ROLES_EDIT: "roles.edit",
   ROLES_DELETE: "roles.delete",
 
+  // Departments module
+  DEPARTMENTS_VIEW: "departments.view",
+  DEPARTMENTS_CREATE: "departments.create",
+  DEPARTMENTS_EDIT: "departments.edit",
+  DEPARTMENTS_DELETE: "departments.delete",
+
+  // Services module
+  SERVICES_VIEW: "services.view",
+  SERVICES_CREATE: "services.create",
+  SERVICES_EDIT: "services.edit",
+  SERVICES_DELETE: "services.delete",
+
+  // Service Categories module
+  SERVICE_CATEGORIES_VIEW: "service-categories.view",
+  SERVICE_CATEGORIES_CREATE: "service-categories.create",
+  SERVICE_CATEGORIES_EDIT: "service-categories.edit",
+  SERVICE_CATEGORIES_DELETE: "service-categories.delete",
+
   // Settings module
   SETTINGS_VIEW: "settings.view",
   SETTINGS_EDIT: "settings.edit",
@@ -171,6 +189,9 @@ export const MENU_PERMISSIONS: Record<string, string> = {
   "/billing": PERMISSIONS.BILLING_VIEW,
   "/reports": PERMISSIONS.REPORTS_VIEW,
   "/roles": PERMISSIONS.ROLES_VIEW,
+  "/departments": PERMISSIONS.DEPARTMENTS_VIEW,
+  "/services": PERMISSIONS.SERVICES_VIEW,
+  "/service-categories": PERMISSIONS.SERVICE_CATEGORIES_VIEW,
   "/settings": PERMISSIONS.SETTINGS_VIEW,
 };
 
@@ -190,7 +211,7 @@ export const canAccessRoute = (path: string): boolean => {
   // Fallback: If no permissions but user has admin role, allow access to admin routes
   if (!hasAccess) {
     const userRole = getUserRole();
-    const adminRoutes = ["/users", "/roles"];
+    const adminRoutes = ["/users", "/roles", "/departments", "/services", "/service-categories"];
     
     if (userRole === "admin" && adminRoutes.includes(path)) {
       // Admin role should have access to users and roles

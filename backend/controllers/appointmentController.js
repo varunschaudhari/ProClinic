@@ -11,11 +11,12 @@ import { logInfo, logError } from "../config/logger.js";
 // @access  Private
 export const getAppointments = async (req, res) => {
   try {
-    const { doctorId, patientId, date, status, priority, appointmentType, startDate, endDate, search, isFollowUp } = req.query;
+    const { doctorId, patientId, departmentId, date, status, priority, appointmentType, startDate, endDate, search, isFollowUp } = req.query;
     const query = {};
 
     if (doctorId) query.doctorId = doctorId;
     if (patientId) query.patientId = patientId;
+    if (departmentId) query.departmentId = departmentId;
     if (status) query.status = status;
     if (priority) query.priority = priority;
     if (appointmentType) query.appointmentType = appointmentType;
@@ -58,6 +59,7 @@ export const getAppointments = async (req, res) => {
     const appointments = await Appointment.find(query)
       .populate("patientId", "name phone patientId email")
       .populate("doctorId", "name email")
+      .populate("departmentId", "name code")
       .populate("createdBy", "name email")
       .populate("updatedBy", "name email")
       .populate("cancelledBy", "name email")
@@ -95,10 +97,11 @@ export const getAppointments = async (req, res) => {
 // @access  Private
 export const getAppointmentStats = async (req, res) => {
   try {
-    const { doctorId, startDate, endDate } = req.query;
+    const { doctorId, departmentId, startDate, endDate } = req.query;
     const query = {};
 
     if (doctorId) query.doctorId = doctorId;
+    if (departmentId) query.departmentId = departmentId;
     if (startDate && endDate) {
       const start = new Date(startDate);
       start.setHours(0, 0, 0, 0);

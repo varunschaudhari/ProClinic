@@ -23,6 +23,11 @@ const roomSchema = new mongoose.Schema(
       type: String,
       trim: true,
     },
+    departmentId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "Department",
+      default: null,
+    },
     beds: [
       {
         bedNumber: {

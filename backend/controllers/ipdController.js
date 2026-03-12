@@ -33,6 +33,7 @@ export const getIPDRecords = async (req, res) => {
     const {
       patientId,
       doctorId,
+      departmentId,
       status,
       admissionDate,
       startDate,
@@ -46,6 +47,7 @@ export const getIPDRecords = async (req, res) => {
 
     if (patientId) query.patientId = patientId;
     if (doctorId) query.doctorId = doctorId;
+    if (departmentId) query.departmentId = departmentId;
     if (status) query.status = status;
     if (roomId) query.roomId = roomId;
     if (paymentStatus) query.paymentStatus = paymentStatus;
@@ -68,6 +70,7 @@ export const getIPDRecords = async (req, res) => {
     const ipdRecords = await IPD.find(query)
       .populate("patientId", "name patientId phone email dateOfBirth gender")
       .populate("doctorId", "name email")
+      .populate("departmentId", "name code")
       .populate("roomId", "roomNumber roomType floor ward")
       .populate("createdBy", "name email")
       .sort({ admissionDate: -1 })
@@ -100,18 +103,20 @@ export const getIPDRecords = async (req, res) => {
 // @access  Private
 export const getCurrentIPD = async (req, res) => {
   try {
-    const { doctorId, roomId } = req.query;
+    const { doctorId, departmentId, roomId } = req.query;
 
     const query = {
       status: { $in: ["admitted", "under-treatment"] },
     };
 
     if (doctorId) query.doctorId = doctorId;
+    if (departmentId) query.departmentId = departmentId;
     if (roomId) query.roomId = roomId;
 
     const currentIPD = await IPD.find(query)
       .populate("patientId", "name patientId phone email dateOfBirth gender")
       .populate("doctorId", "name email")
+      .populate("departmentId", "name code")
       .populate("roomId", "roomNumber roomType floor ward")
       .sort({ admissionDate: -1 });
 
@@ -194,6 +199,7 @@ export const createIPDRecord = async (req, res) => {
       phone,
       email,
       doctorId,
+      departmentId,
       admissionDate,
       admissionTime,
       admissionType,
@@ -273,6 +279,7 @@ export const createIPDRecord = async (req, res) => {
     const ipdRecord = await IPD.create({
       patientId: patient._id,
       doctorId,
+      departmentId: departmentId || null,
       admissionDate: admissionDate || new Date(),
       admissionTime: admissionTime || null,
       admissionType: admissionType || "planned",

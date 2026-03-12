@@ -92,6 +92,24 @@ export const PERMISSIONS = {
   PATIENTS_REMARKS_EDIT: "patients.remarks.edit",
   PATIENTS_BILLING_VIEW: "patients.billing.view",
   PATIENTS_BILLING: "patients.billing",
+
+  // Departments module
+  DEPARTMENTS_VIEW: "departments.view",
+  DEPARTMENTS_CREATE: "departments.create",
+  DEPARTMENTS_EDIT: "departments.edit",
+  DEPARTMENTS_DELETE: "departments.delete",
+
+  // Services module
+  SERVICES_VIEW: "services.view",
+  SERVICES_CREATE: "services.create",
+  SERVICES_EDIT: "services.edit",
+  SERVICES_DELETE: "services.delete",
+
+  // Service Categories module
+  SERVICE_CATEGORIES_VIEW: "service-categories.view",
+  SERVICE_CATEGORIES_CREATE: "service-categories.create",
+  SERVICE_CATEGORIES_EDIT: "service-categories.edit",
+  SERVICE_CATEGORIES_DELETE: "service-categories.delete",
 };
 
 // Get all permissions as an array

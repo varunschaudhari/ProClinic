@@ -20,6 +20,11 @@ const ipdSchema = new mongoose.Schema(
       ref: "User",
       required: [true, "Attending doctor is required"],
     },
+    departmentId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "Department",
+      default: null,
+    },
     // Admission details
     admissionDate: {
       type: Date,

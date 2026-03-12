@@ -20,6 +20,11 @@ const appointmentSchema = new mongoose.Schema(
       ref: "User",
       required: true,
     },
+    departmentId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "Department",
+      default: null,
+    },
     appointmentDate: {
       type: Date,
       required: [true, "Appointment date is required"],
