@@ -55,6 +55,9 @@ export const hasAllPermissions = (permissions: string[]): boolean => {
 
 // Permission constants matching backend
 export const PERMISSIONS = {
+  // Dashboard module
+  DASHBOARD_VIEW: "dashboard.view",
+
   // Users module
   USERS_VIEW: "users.view",
   USERS_CREATE: "users.create",
@@ -141,11 +144,12 @@ export const PERMISSIONS = {
   PATIENTS_REMARKS_VIEW: "patients.remarks.view",
   PATIENTS_REMARKS_EDIT: "patients.remarks.edit",
   PATIENTS_BILLING_VIEW: "patients.billing.view",
+  PATIENTS_BILLING: "patients.billing",
 };
 
 // Map menu items to required permissions
 export const MENU_PERMISSIONS: Record<string, string> = {
-  "/dashboard": "", // Dashboard accessible to all authenticated users
+  "/dashboard": PERMISSIONS.DASHBOARD_VIEW,
   "/patients": PERMISSIONS.PATIENTS_VIEW,
   "/opd": PERMISSIONS.OPD_VIEW,
   "/opd/dashboard": PERMISSIONS.OPD_VIEW,
@@ -173,11 +177,7 @@ export const MENU_PERMISSIONS: Record<string, string> = {
 // Check if user can access a route
 export const canAccessRoute = (path: string): boolean => {
   const requiredPermission = MENU_PERMISSIONS[path];
-  
-  // Dashboard is accessible to all authenticated users
-  if (path === "/dashboard") {
-    return true;
-  }
+  // /dashboard access is permission-controlled (dashboard.view)
   
   // If no permission required, allow access
   if (!requiredPermission) {
@@ -199,7 +199,8 @@ export const canAccessRoute = (path: string): boolean => {
   }
   
   // Debug logging (can be removed in production)
-  if (process.env.NODE_ENV === "development" && !hasAccess) {
+  // NOTE: Avoid `process.env` in browser TS builds; Vite exposes `import.meta.env`.
+  if (!hasAccess && (import.meta as any)?.env?.DEV) {
     const userPermissions = getUserPermissions();
     const userRole = getUserRole();
     console.log(`[Permission Check] Path: ${path}, Required: ${requiredPermission}`);

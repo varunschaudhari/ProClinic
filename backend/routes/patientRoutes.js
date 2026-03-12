@@ -9,6 +9,9 @@ import {
   getConsultationSummary,
   getOperativeSummary,
   getBillingInformation,
+  processPayment,
+  addPatientBillingTransaction,
+  getPatientBillingTransactions,
 } from "../controllers/patientController.js";
 import {
   getPatientRemarks,
@@ -58,6 +61,13 @@ router.patch("/:id/status", hasPermission(PERMISSIONS.PATIENTS_EDIT), updatePati
 router.get("/:patientId/consultation-summary", hasPermission(PERMISSIONS.PATIENTS_VIEW), getConsultationSummary);
 router.get("/:patientId/operative-summary", hasPermission(PERMISSIONS.PATIENTS_VIEW), getOperativeSummary);
 router.get("/:patientId/billing-information", hasPermission(PERMISSIONS.PATIENTS_VIEW), getBillingInformation);
+router.post("/:patientId/process-payment", hasPermission(PERMISSIONS.PATIENTS_BILLING), processPayment);
+
+// Patient-level billing transactions (Advance / Credit Note)
+router
+  .route("/:patientId/billing/transactions")
+  .get(hasPermission(PERMISSIONS.PATIENTS_BILLING), getPatientBillingTransactions)
+  .post(hasPermission(PERMISSIONS.PATIENTS_BILLING), addPatientBillingTransaction);
 
 // Remarks routes
 router

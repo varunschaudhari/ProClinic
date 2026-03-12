@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo } from "react";
 import { Link, useLocation, useNavigate } from "react-router-dom";
 import { canAccessRoute } from "../utils/permissions";
 import { authAPI } from "../utils/api";
@@ -31,6 +31,7 @@ function Sidebar() {
     name: string;
     email: string;
     role: string;
+    roles?: Array<{ name: string; displayName?: string }>;
     permissions?: string[];
   } | null>(() => {
     const userData =
@@ -58,6 +59,7 @@ function Sidebar() {
             name: updatedUser.name,
             email: updatedUser.email,
             role: updatedUser.role,
+            roles: updatedUser.roles || [],
             permissions: updatedUser.permissions || [],
           };
           
@@ -161,9 +163,36 @@ function Sidebar() {
     return children.some((child) => location.pathname === child.path || location.pathname.startsWith(child.path + "/"));
   };
 
-  const menuItems: MenuItem[] = [
+  // Check if user is a doctor (check both role field and roles array)
+  const isDoctor = useMemo(() => {
+    // Check simple role field
+    const simpleRole = user?.role?.toLowerCase();
+    const hasSimpleDoctorRole = simpleRole === "doctor";
+    
+    // Check roles array for doctor role
+    const hasDoctorInRoles = user?.roles?.some((role) => {
+      const roleName = typeof role === "string" ? role : role?.name;
+      return roleName?.toLowerCase().includes("doctor");
+    }) || false;
+    
+    const isDoc = hasSimpleDoctorRole || hasDoctorInRoles;
+    
+    if (import.meta.env.DEV) {
+      console.log("[Sidebar] User role check:", { 
+        simpleRole, 
+        hasSimpleDoctorRole,
+        roles: user?.roles,
+        hasDoctorInRoles,
+        isDoctor: isDoc,
+        user 
+      });
+    }
+    return isDoc;
+  }, [user?.role, user?.roles]);
+
+  const menuItems: MenuItem[] = useMemo(() => [
     {
-      name: "Dashboard",
+      name: isDoctor ? "Doctor's Dashboard" : "Dashboard",
       icon: (
         <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
           <path
@@ -174,7 +203,7 @@ function Sidebar() {
           />
         </svg>
       ),
-      path: "/dashboard",
+      path: isDoctor ? "/doctor/dashboard" : "/dashboard",
       section: "main",
     },
     {
@@ -325,7 +354,7 @@ function Sidebar() {
       path: "/settings",
       section: "main",
     },
-  ];
+  ], [isDoctor]);
 
   const handleLogout = () => {
     localStorage.removeItem("proclinic_token");
@@ -360,7 +389,7 @@ function Sidebar() {
     // For regular items, check the item path
     if (item.path) {
       const canAccess = canAccessRoute(item.path);
-      if (process.env.NODE_ENV === "development" && !canAccess) {
+      if (import.meta.env.DEV && !canAccess) {
         console.log(`[Sidebar] Hiding menu item: ${item.name} (${item.path})`);
       }
       return canAccess;

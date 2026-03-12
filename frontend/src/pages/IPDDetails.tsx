@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { useNavigate, useParams, Link } from "react-router-dom";
 import Sidebar from "../components/Sidebar";
-import { ipdAPI, usersAPI, roomAPI } from "../utils/api";
+import { ipdAPI, roomAPI } from "../utils/api";
 import { hasPermission, PERMISSIONS } from "../utils/permissions";
 import { showSuccess, showError } from "../utils/toast";
 
@@ -96,7 +96,6 @@ function IPDDetails() {
   const [showPrescriptionModal, setShowPrescriptionModal] = useState(false);
   const [showLabReportModal, setShowLabReportModal] = useState(false);
   const [availableBeds, setAvailableBeds] = useState<any[]>([]);
-  const [doctors, setDoctors] = useState<Array<{ _id: string; name: string }>>([]);
   const [formData, setFormData] = useState({
     treatmentPlan: "",
     notes: "",
@@ -140,7 +139,6 @@ function IPDDetails() {
     if (id) {
       fetchIPDRecord();
       fetchAvailableBeds();
-      fetchDoctors();
     }
   }, [id]);
 
@@ -179,29 +177,6 @@ function IPDDetails() {
       }
     } catch (err) {
       console.error("Error fetching available beds:", err);
-    }
-  };
-
-  const fetchDoctors = async () => {
-    try {
-      const response = await usersAPI.getAll();
-      if (response.success && response.data?.users) {
-        const doctorUsers = response.data.users.filter((user: any) => {
-          if (user.roles && Array.isArray(user.roles)) {
-            return user.roles.some((role: any) =>
-              role.name && role.name.toLowerCase().includes("doctor")
-            );
-          }
-          return user.role && user.role.toLowerCase().includes("doctor");
-        });
-        const doctorList = doctorUsers.map((user: any) => ({
-          _id: user._id,
-          name: user.name,
-        }));
-        setDoctors(doctorList);
-      }
-    } catch (err) {
-      console.error("Error fetching doctors:", err);
     }
   };
 

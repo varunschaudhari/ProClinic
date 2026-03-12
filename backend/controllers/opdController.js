@@ -339,6 +339,9 @@ export const updateOPDRecord = async (req, res) => {
       treatment,
       prescription,
       notes,
+      receptionRemarks,
+      doctorRemarks,
+      remarks,
       consultationFee,
       additionalCharges,
       discount,
@@ -368,6 +371,9 @@ export const updateOPDRecord = async (req, res) => {
     if (treatment !== undefined) opdRecord.treatment = treatment || null;
     if (prescription !== undefined) opdRecord.prescription = prescription || null;
     if (notes !== undefined) opdRecord.notes = notes || null;
+    if (receptionRemarks !== undefined) opdRecord.receptionRemarks = receptionRemarks || null;
+    if (doctorRemarks !== undefined) opdRecord.doctorRemarks = doctorRemarks || null;
+    if (remarks !== undefined) opdRecord.remarks = remarks || null;
     if (consultationFee !== undefined) opdRecord.consultationFee = consultationFee || 0;
     if (additionalCharges !== undefined) opdRecord.additionalCharges = additionalCharges || 0;
     if (discount !== undefined) opdRecord.discount = discount || 0;
@@ -527,6 +533,219 @@ export const processPayment = async (req, res) => {
     });
   } catch (error) {
     logError("Process payment error", error, {
+      updatedBy: req.user?.id,
+      opdId: req.params.id,
+    });
+    res.status(500).json({
+      success: false,
+      message: "Server error. Please try again later.",
+    });
+  }
+};
+
+// @desc    Process refund
+// @route   PATCH /api/opd/:id/refund
+// @access  Private
+export const processRefund = async (req, res) => {
+  try {
+    const { amount, method, referenceNo, note, refundedAt } = req.body;
+
+    const refundAmount = Number(amount);
+    if (!refundAmount || Number.isNaN(refundAmount) || refundAmount <= 0) {
+      return res.status(400).json({
+        success: false,
+        message: "Please provide a valid refund amount",
+      });
+    }
+
+    const opdRecord = await OPD.findById(req.params.id);
+
+    if (!opdRecord) {
+      return res.status(404).json({
+        success: false,
+        message: "OPD record not found",
+      });
+    }
+
+    const currentPaid = opdRecord.paidAmount || 0;
+    if (refundAmount > currentPaid) {
+      return res.status(400).json({
+        success: false,
+        message: "Refund amount cannot be greater than paid amount",
+      });
+    }
+
+    opdRecord.paidAmount = Math.max(0, currentPaid - refundAmount);
+    opdRecord.paymentDate = new Date();
+    opdRecord.updatedBy = req.user.id;
+
+    opdRecord.refunds = opdRecord.refunds || [];
+    opdRecord.refunds.push({
+      amount: refundAmount,
+      method: method || "cash",
+      referenceNo: referenceNo || null,
+      note: note || null,
+      refundedAt: refundedAt ? new Date(refundedAt) : new Date(),
+      refundedBy: req.user.id,
+    });
+
+    // Payment status will be updated automatically in pre-save hook
+    await opdRecord.save();
+
+    const populatedRecord = await OPD.findById(opdRecord._id)
+      .populate("patientId", "name patientId phone email dateOfBirth gender")
+      .populate("doctorId", "name email");
+
+    logInfo("OPD refund processed", {
+      updatedBy: req.user.id,
+      opdId: opdRecord._id,
+      refundAmount,
+      method,
+    });
+
+    res.status(200).json({
+      success: true,
+      message: "Refund processed successfully",
+      data: { opdRecord: populatedRecord },
+    });
+  } catch (error) {
+    logError("Process refund error", error, {
+      updatedBy: req.user?.id,
+      opdId: req.params.id,
+    });
+    res.status(500).json({
+      success: false,
+      message: "Server error. Please try again later.",
+    });
+  }
+};
+
+// @desc    Add credit note
+// @route   PATCH /api/opd/:id/credit-note
+// @access  Private
+export const addCreditNote = async (req, res) => {
+  try {
+    const { amount, referenceNo, note, issuedAt } = req.body;
+
+    const creditAmount = Number(amount);
+    if (!creditAmount || Number.isNaN(creditAmount) || creditAmount <= 0) {
+      return res.status(400).json({
+        success: false,
+        message: "Please provide a valid credit note amount",
+      });
+    }
+
+    const opdRecord = await OPD.findById(req.params.id);
+
+    if (!opdRecord) {
+      return res.status(404).json({
+        success: false,
+        message: "OPD record not found",
+      });
+    }
+
+    // Apply credit note as additional discount (reduces totalAmount)
+    const currentDiscount = opdRecord.discount || 0;
+    opdRecord.discount = currentDiscount + creditAmount;
+
+    opdRecord.creditNotes = opdRecord.creditNotes || [];
+    opdRecord.creditNotes.push({
+      amount: creditAmount,
+      referenceNo: referenceNo || null,
+      note: note || null,
+      issuedAt: issuedAt ? new Date(issuedAt) : new Date(),
+      issuedBy: req.user.id,
+    });
+
+    opdRecord.updatedBy = req.user.id;
+    await opdRecord.save();
+
+    const populatedRecord = await OPD.findById(opdRecord._id)
+      .populate("patientId", "name patientId phone email dateOfBirth gender")
+      .populate("doctorId", "name email");
+
+    logInfo("OPD credit note added", {
+      updatedBy: req.user.id,
+      opdId: opdRecord._id,
+      creditAmount,
+    });
+
+    res.status(200).json({
+      success: true,
+      message: "Credit note added successfully",
+      data: { opdRecord: populatedRecord },
+    });
+  } catch (error) {
+    logError("Add credit note error", error, {
+      updatedBy: req.user?.id,
+      opdId: req.params.id,
+    });
+    res.status(500).json({
+      success: false,
+      message: "Server error. Please try again later.",
+    });
+  }
+};
+
+// @desc    Record billing advance (bill-level)
+// @route   PATCH /api/opd/:id/advance
+// @access  Private
+export const recordAdvance = async (req, res) => {
+  try {
+    const { amount, method, referenceNo, note, receivedAt } = req.body;
+
+    const advanceAmount = Number(amount);
+    if (!advanceAmount || Number.isNaN(advanceAmount) || advanceAmount <= 0) {
+      return res.status(400).json({
+        success: false,
+        message: "Please provide a valid advance amount",
+      });
+    }
+
+    const opdRecord = await OPD.findById(req.params.id);
+
+    if (!opdRecord) {
+      return res.status(404).json({
+        success: false,
+        message: "OPD record not found",
+      });
+    }
+
+    opdRecord.advanceAmount = (opdRecord.advanceAmount || 0) + advanceAmount;
+    opdRecord.paidAmount = (opdRecord.paidAmount || 0) + advanceAmount;
+    opdRecord.paymentMethod = method || opdRecord.paymentMethod;
+    opdRecord.paymentDate = new Date();
+
+    opdRecord.advances = opdRecord.advances || [];
+    opdRecord.advances.push({
+      amount: advanceAmount,
+      method: method || "cash",
+      referenceNo: referenceNo || null,
+      note: note || null,
+      receivedAt: receivedAt ? new Date(receivedAt) : new Date(),
+      receivedBy: req.user.id,
+    });
+
+    opdRecord.updatedBy = req.user.id;
+    await opdRecord.save();
+
+    const populatedRecord = await OPD.findById(opdRecord._id)
+      .populate("patientId", "name patientId phone email dateOfBirth gender")
+      .populate("doctorId", "name email");
+
+    logInfo("OPD advance recorded", {
+      updatedBy: req.user.id,
+      opdId: opdRecord._id,
+      advanceAmount,
+    });
+
+    res.status(200).json({
+      success: true,
+      message: "Advance recorded successfully",
+      data: { opdRecord: populatedRecord },
+    });
+  } catch (error) {
+    logError("Record advance error", error, {
       updatedBy: req.user?.id,
       opdId: req.params.id,
     });

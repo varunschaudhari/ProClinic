@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import Sidebar from "../components/Sidebar";
 import { ipdAPI, patientsAPI, usersAPI, roomAPI } from "../utils/api";
-import { canAccessRoute, hasPermission, PERMISSIONS } from "../utils/permissions";
+import { canAccessRoute } from "../utils/permissions";
 import { showSuccess, showError } from "../utils/toast";
 
 type Patient = {
@@ -155,7 +155,6 @@ function IPDAdmit() {
   };
 
   const handleBedChange = (roomId: string, bedNumber: string) => {
-    const bed = availableBeds.find((b) => b.roomId === roomId && b.bedNumber === bedNumber);
     setFormData((prev) => ({
       ...prev,
       roomId,

@@ -217,8 +217,65 @@ export const patientsAPI = {
   },
 
   // Billing Information
-  getBillingInformation: async (patientId: string) => {
-    const response = await apiRequest(`/patients/${patientId}/billing-information`);
+  getBillingInformation: async (patientId: string, params?: {
+    startDate?: string;
+    endDate?: string;
+    type?: "OPD" | "IPD" | "all";
+    paymentStatus?: "pending" | "partial" | "paid";
+  }) => {
+    const queryParams = new URLSearchParams();
+    if (params?.startDate) queryParams.append("startDate", params.startDate);
+    if (params?.endDate) queryParams.append("endDate", params.endDate);
+    if (params?.type) queryParams.append("type", params.type);
+    if (params?.paymentStatus) queryParams.append("paymentStatus", params.paymentStatus);
+    const queryString = queryParams.toString();
+    const response = await apiRequest(`/patients/${patientId}/billing-information${queryString ? `?${queryString}` : ""}`);
+    return response.json();
+  },
+
+  processPayment: async (patientId: string, paymentData: {
+    bills: Array<{ type: "OPD" | "IPD"; id: string; amount: number }>;
+    paymentMethod: string;
+    paymentDate?: string;
+    notes?: string;
+  }) => {
+    const response = await apiRequest(`/patients/${patientId}/process-payment`, {
+      method: "POST",
+      body: JSON.stringify(paymentData),
+    });
+    return response.json();
+  },
+
+  addBillingTransaction: async (
+    patientId: string,
+    data: {
+      transactionType: "advance" | "credit_note";
+      amount: number;
+      method?: string;
+      referenceNo?: string;
+      note?: string;
+      transactionDate?: string;
+    }
+  ) => {
+    const response = await apiRequest(`/patients/${patientId}/billing/transactions`, {
+      method: "POST",
+      body: JSON.stringify(data),
+    });
+    return response.json();
+  },
+
+  getBillingTransactions: async (
+    patientId: string,
+    params?: { startDate?: string; endDate?: string; transactionType?: "advance" | "credit_note" }
+  ) => {
+    const queryParams = new URLSearchParams();
+    if (params?.startDate) queryParams.append("startDate", params.startDate);
+    if (params?.endDate) queryParams.append("endDate", params.endDate);
+    if (params?.transactionType) queryParams.append("transactionType", params.transactionType);
+    const queryString = queryParams.toString();
+    const response = await apiRequest(
+      `/patients/${patientId}/billing/transactions${queryString ? `?${queryString}` : ""}`
+    );
     return response.json();
   },
 
@@ -453,6 +510,7 @@ export const appointmentsAPI = {
     startDate?: string;
     endDate?: string;
     search?: string;
+    isFollowUp?: boolean;
   }) => {
     const queryParams = new URLSearchParams();
     if (params?.doctorId) queryParams.append("doctorId", params.doctorId);
@@ -464,6 +522,7 @@ export const appointmentsAPI = {
     if (params?.startDate) queryParams.append("startDate", params.startDate);
     if (params?.endDate) queryParams.append("endDate", params.endDate);
     if (params?.search) queryParams.append("search", params.search);
+    if (params?.isFollowUp) queryParams.append("isFollowUp", "true");
     const queryString = queryParams.toString();
     const response = await apiRequest(`/appointments${queryString ? `?${queryString}` : ""}`);
     return response.json();
@@ -515,6 +574,7 @@ export const appointmentsAPI = {
   update: async (
     id: string,
     appointmentData: {
+      doctorId?: string;
       appointmentDate?: string;
       appointmentTime?: string;
       appointmentType?: "booked" | "walk-in";
@@ -724,6 +784,9 @@ export const opdAPI = {
       treatment?: string;
       prescription?: string;
       notes?: string;
+      receptionRemarks?: string;
+      doctorRemarks?: string;
+      remarks?: string;
       consultationFee?: number;
       additionalCharges?: number;
       discount?: number;
@@ -761,6 +824,56 @@ export const opdAPI = {
     const response = await apiRequest(`/opd/${id}/payment`, {
       method: "PATCH",
       body: JSON.stringify(paymentData),
+    });
+    return response.json();
+  },
+
+  refund: async (
+    id: string,
+    refundData: {
+      amount: number;
+      method?: string;
+      referenceNo?: string;
+      note?: string;
+      refundedAt?: string;
+    }
+  ) => {
+    const response = await apiRequest(`/opd/${id}/refund`, {
+      method: "PATCH",
+      body: JSON.stringify(refundData),
+    });
+    return response.json();
+  },
+
+  creditNote: async (
+    id: string,
+    creditData: {
+      amount: number;
+      referenceNo?: string;
+      note?: string;
+      issuedAt?: string;
+    }
+  ) => {
+    const response = await apiRequest(`/opd/${id}/credit-note`, {
+      method: "PATCH",
+      body: JSON.stringify(creditData),
+    });
+    return response.json();
+  },
+
+  advance: async (
+    id: string,
+    advanceData: {
+      amount: number;
+      method?: string;
+      referenceNo?: string;
+      note?: string;
+      receivedAt?: string;
+    }
+  ) => {
+    const response = await apiRequest(`/opd/${id}/advance`, {
+      method: "PATCH",
+      body: JSON.stringify(advanceData),
     });
     return response.json();
   },

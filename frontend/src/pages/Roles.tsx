@@ -30,7 +30,6 @@ type RoleForm = {
 function Roles() {
   const navigate = useNavigate();
   const [roles, setRoles] = useState<Role[]>([]);
-  const [permissions, setPermissions] = useState<string[]>([]);
   const [permissionsByModule, setPermissionsByModule] = useState<PermissionGroup>({});
   const [loading, setLoading] = useState(true);
   const [showModal, setShowModal] = useState(false);
@@ -83,7 +82,6 @@ function Roles() {
     try {
       const response = await rolesAPI.getPermissions();
       if (response.success) {
-        setPermissions(response.data.permissions);
         setPermissionsByModule(response.data.permissionsByModule);
       }
     } catch (err) {

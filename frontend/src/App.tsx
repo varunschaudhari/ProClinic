@@ -2,6 +2,7 @@ import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
 import { Toaster } from "react-hot-toast";
 import Login from "./pages/Login";
 import Dashboard from "./pages/Dashboard";
+import DoctorDashboard from "./pages/DoctorDashboard";
 import Users from "./pages/Users";
 import UserDetails from "./pages/UserDetails";
 import Roles from "./pages/Roles";
@@ -16,6 +17,14 @@ import OPDQueue from "./pages/OPDQueue";
 import OPDList from "./pages/OPDList";
 import OPDDetails from "./pages/OPDDetails";
 import OPDBilling from "./pages/OPDBilling";
+import OPDBillingOverview from "./pages/OPDBillingOverview";
+import OPDBillingPatientDetails from "./pages/OPDBillingPatientDetails";
+import OPDBillingCashMemo from "./pages/OPDBillingCashMemo";
+import OPDBillingInvoice from "./pages/OPDBillingInvoice";
+import OPDBillingReceipt from "./pages/OPDBillingReceipt";
+import OPDBillingAdvance from "./pages/OPDBillingAdvance";
+import OPDBillingCreditNotes from "./pages/OPDBillingCreditNotes";
+import OPDBillingRefund from "./pages/OPDBillingRefund";
 import IPDDashboard from "./pages/IPDDashboard";
 import IPDAdmit from "./pages/IPDAdmit";
 import IPDList from "./pages/IPDList";
@@ -93,6 +102,14 @@ function App() {
           element={
             <ProtectedRoute>
               <Dashboard />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/doctor/dashboard"
+          element={
+            <ProtectedRoute>
+              <DoctorDashboard />
             </ProtectedRoute>
           }
         />
@@ -229,6 +246,70 @@ function App() {
           element={
             <ProtectedRoute>
               <OPDBilling />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/opd/billing/overview"
+          element={
+            <ProtectedRoute>
+              <OPDBillingOverview />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/opd/billing/patient/:patientId"
+          element={
+            <ProtectedRoute>
+              <OPDBillingPatientDetails />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/opd/billing/cash-memo"
+          element={
+            <ProtectedRoute>
+              <OPDBillingCashMemo />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/opd/billing/invoice"
+          element={
+            <ProtectedRoute>
+              <OPDBillingInvoice />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/opd/billing/receipt"
+          element={
+            <ProtectedRoute>
+              <OPDBillingReceipt />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/opd/billing/advance"
+          element={
+            <ProtectedRoute>
+              <OPDBillingAdvance />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/opd/billing/credit-notes"
+          element={
+            <ProtectedRoute>
+              <OPDBillingCreditNotes />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/opd/billing/refund"
+          element={
+            <ProtectedRoute>
+              <OPDBillingRefund />
             </ProtectedRoute>
           }
         />

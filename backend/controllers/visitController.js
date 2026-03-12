@@ -9,6 +9,9 @@ export const getPatientVisits = async (req, res) => {
   try {
     const visits = await Visit.find({ patientId: req.params.patientId })
       .sort({ visitDate: -1 })
+      .populate("appointmentId", "appointmentNumber appointmentDate appointmentTime")
+      .populate("previousVisitId", "visitDate visitType")
+      .populate("doctorId", "name email")
       .populate("createdBy", "name email");
 
     logInfo("Patient visits fetched", {
@@ -39,10 +42,11 @@ export const getPatientVisits = async (req, res) => {
 // @access  Private
 export const getVisit = async (req, res) => {
   try {
-    const visit = await Visit.findById(req.params.id).populate(
-      "createdBy",
-      "name email"
-    );
+    const visit = await Visit.findById(req.params.id)
+      .populate("appointmentId", "appointmentNumber appointmentDate appointmentTime status")
+      .populate("previousVisitId", "visitDate visitType diagnosis treatment")
+      .populate("doctorId", "name email")
+      .populate("createdBy", "name email");
 
     if (!visit) {
       return res.status(404).json({

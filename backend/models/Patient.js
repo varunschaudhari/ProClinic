@@ -101,6 +101,16 @@ const patientSchema = new mongoose.Schema(
       trim: true,
       default: null,
     },
+    receptionRemarks: {
+      type: String,
+      trim: true,
+      default: null,
+    },
+    doctorRemarks: {
+      type: String,
+      trim: true,
+      default: null,
+    },
     tags: {
       type: [String],
       default: [],

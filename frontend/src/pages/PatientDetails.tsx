@@ -1,7 +1,7 @@
 import { useEffect, useState, useRef } from "react";
 import { useNavigate, useParams, Link } from "react-router-dom";
 import Sidebar from "../components/Sidebar";
-import { patientsAPI, visitsAPI, documentsAPI, usersAPI } from "../utils/api";
+import { patientsAPI, documentsAPI, usersAPI, opdAPI, authAPI } from "../utils/api";
 import { hasPermission, PERMISSIONS } from "../utils/permissions";
 import { getCityStateFromPincode } from "../utils/pincodeData";
 import { filterCities, filterStates, getCitiesByState } from "../utils/indianCitiesStates";
@@ -33,6 +33,8 @@ type Patient = {
   allergies?: string[];
   chronicConditions?: string[];
   notes?: string | null;
+  receptionRemarks?: string | null;
+  doctorRemarks?: string | null;
   tags?: string[];
   profileImage?: string | null;
   status: string;
@@ -43,6 +45,10 @@ type Patient = {
     name: string;
   };
   isActive: boolean;
+  opdCount?: number;
+  ipdCount?: number;
+  totalVisits?: number;
+  activeIPDCount?: number;
   createdAt: string;
   updatedAt?: string;
 };
@@ -87,7 +93,7 @@ function PatientDetails() {
     status: "",
     statusNotes: "",
   });
-  const [activeTab, setActiveTab] = useState<"overview" | "medical" | "visits" | "documents" | "consultation" | "clinical" | "operative" | "engagement" | "remarks" | "billing">("overview");
+  const [activeTab, setActiveTab] = useState<"overview" | "medical" | "documents" | "consultation" | "clinical" | "operative" | "engagement" | "remarks" | "billing">("overview");
   const [formData, setFormData] = useState<PatientForm>({
     name: "",
     dateOfBirth: "",
@@ -117,18 +123,6 @@ function PatientDetails() {
   });
   const [previewImage, setPreviewImage] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
-  const [visits, setVisits] = useState<any[]>([]);
-  const [loadingVisits, setLoadingVisits] = useState(false);
-  const [showVisitModal, setShowVisitModal] = useState(false);
-  const [visitForm, setVisitForm] = useState({
-    visitDate: new Date().toISOString().split('T')[0],
-    visitType: "Consultation",
-    chiefComplaint: "",
-    diagnosis: "",
-    treatment: "",
-    notes: "",
-    doctorName: "",
-  });
   const [documents, setDocuments] = useState<any[]>([]);
   const [loadingDocuments, setLoadingDocuments] = useState(false);
   const [showDocumentModal, setShowDocumentModal] = useState(false);
@@ -136,20 +130,42 @@ function PatientDetails() {
   // New tabs state
   const [consultationSummary, setConsultationSummary] = useState<any>(null);
   const [loadingConsultation, setLoadingConsultation] = useState(false);
+  const [currentUser, setCurrentUser] = useState<any>(null);
+  const [showRemarksModal, setShowRemarksModal] = useState(false);
+  const [selectedVisitForRemarks, setSelectedVisitForRemarks] = useState<any>(null);
+  const [remarksForm, setRemarksForm] = useState({
+    receptionRemarks: "",
+    doctorRemarks: "",
+    remarks: "",
+  });
   const [clinicalData, setClinicalData] = useState<any>(null);
   const [loadingClinical, setLoadingClinical] = useState(false);
   const [operativeSummary, setOperativeSummary] = useState<any>(null);
   const [loadingOperative, setLoadingOperative] = useState(false);
   const [engagement, setEngagement] = useState<any>(null);
   const [loadingEngagement, setLoadingEngagement] = useState(false);
-  const [remarks, setRemarks] = useState<any[]>([]);
-  const [loadingRemarks, setLoadingRemarks] = useState(false);
+  const [patientRemarks, setPatientRemarks] = useState({
+    receptionRemarks: "",
+    doctorRemarks: "",
+  });
+  const [savingRemarks, setSavingRemarks] = useState(false);
+  const [remarksSaveTimeout, setRemarksSaveTimeout] = useState<ReturnType<typeof setTimeout> | null>(null);
   const [billingInfo, setBillingInfo] = useState<any>(null);
   const [loadingBilling, setLoadingBilling] = useState(false);
-  
-  // Modals for new tabs
-  const [showRemarkModal, setShowRemarkModal] = useState(false);
-  const [remarkForm, setRemarkForm] = useState({ remark: "", remarkType: "general", allowedRoles: ["doctor", "nurse"], isPrivate: false });
+  const [billingFilters, setBillingFilters] = useState({
+    startDate: "",
+    endDate: "",
+    type: "all" as "OPD" | "IPD" | "all",
+    paymentStatus: "" as "" | "pending" | "partial" | "paid",
+  });
+  const [selectedBills, setSelectedBills] = useState<Set<string>>(new Set());
+  const [showPaymentModal, setShowPaymentModal] = useState(false);
+  const [paymentForm, setPaymentForm] = useState({
+    paymentMethod: "cash",
+    paymentDate: new Date().toISOString().split('T')[0],
+    notes: "",
+  });
+  const [processingPayment, setProcessingPayment] = useState(false);
   
   // Clinical Data submenu state
   const [clinicalSubMenu, setClinicalSubMenu] = useState<"allergy" | "vitals" | "body-composition" | "track-parameters" | "diagnosis" | "reports">("vitals");
@@ -167,14 +183,11 @@ function PatientDetails() {
   const stateInputRef = useRef<HTMLInputElement>(null);
   const cityDropdownRef = useRef<HTMLDivElement>(null);
   const stateDropdownRef = useRef<HTMLDivElement>(null);
-  const [doctors, setDoctors] = useState<Array<{ _id: string; name: string }>>([]);
-  const [doctorSuggestions, setDoctorSuggestions] = useState<Array<{ _id: string; name: string }>>([]);
-  const [showDoctorDropdown, setShowDoctorDropdown] = useState(false);
-  const doctorInputRef = useRef<HTMLInputElement>(null);
-  const doctorDropdownRef = useRef<HTMLDivElement>(null);
+  // NOTE: Doctor dropdown state was used by older UI; kept fetchDoctors for other flows if needed.
 
   useEffect(() => {
     checkAuth();
+    fetchCurrentUser();
     if (id) {
       fetchPatient();
     }
@@ -182,24 +195,17 @@ function PatientDetails() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [id]);
 
-  // Close doctor dropdown when clicking outside
-  useEffect(() => {
-    const handleClickOutside = (event: MouseEvent) => {
-      if (
-        doctorDropdownRef.current &&
-        !doctorDropdownRef.current.contains(event.target as Node) &&
-        doctorInputRef.current &&
-        !doctorInputRef.current.contains(event.target as Node)
-      ) {
-        setShowDoctorDropdown(false);
+  const fetchCurrentUser = async () => {
+    try {
+      const response = await authAPI.getMe();
+      if (response.success) {
+        setCurrentUser(response.data.user);
       }
-    };
+    } catch (err) {
+      console.error("Error fetching current user:", err);
+    }
+  };
 
-    document.addEventListener("mousedown", handleClickOutside);
-    return () => {
-      document.removeEventListener("mousedown", handleClickOutside);
-    };
-  }, []);
 
   const checkAuth = () => {
     const token =
@@ -242,9 +248,9 @@ function PatientDetails() {
           allergies: patientData.allergies?.join(", ") || "",
           chronicConditions: patientData.chronicConditions?.join(", ") || "",
           notes: patientData.notes || "",
+          tags: (patientData.tags || []).join(", "),
           profileImage: null,
         });
-        fetchVisits();
         fetchDocuments();
         if (patientData.profileImage) {
           setPreviewImage(`http://localhost:5000${patientData.profileImage}`);
@@ -306,6 +312,7 @@ function PatientDetails() {
         allergies: patient.allergies?.join(", ") || "",
         chronicConditions: patient.chronicConditions?.join(", ") || "",
         notes: patient.notes || "",
+        tags: (patient.tags || []).join(", "),
         profileImage: null,
       });
       if (patient.profileImage) {
@@ -411,52 +418,6 @@ function PatientDetails() {
     }
   };
 
-  const fetchVisits = async () => {
-    if (!id) return;
-    try {
-      setLoadingVisits(true);
-      const response = await visitsAPI.getByPatientId(id);
-      if (response.success) {
-        setVisits(response.data.visits || []);
-      }
-    } catch (err) {
-      console.error("Error fetching visits:", err);
-    } finally {
-      setLoadingVisits(false);
-    }
-  };
-
-  const handleAddVisit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!id) return;
-    try {
-      const response = await visitsAPI.create({
-        patientId: id,
-        ...visitForm,
-      });
-      if (response.success) {
-        showSuccess("Visit added successfully");
-        setShowVisitModal(false);
-        // Auto-select doctor if only one exists
-        const defaultDoctorName = doctors.length === 1 ? doctors[0].name : "";
-        setVisitForm({
-          visitDate: new Date().toISOString().split('T')[0],
-          visitType: "Consultation",
-          chiefComplaint: "",
-          diagnosis: "",
-          treatment: "",
-          notes: "",
-          doctorName: defaultDoctorName,
-        });
-        fetchVisits();
-      } else {
-        showError(response.message || "Failed to add visit");
-      }
-    } catch (err) {
-      showError("Error adding visit");
-      console.error(err);
-    }
-  };
 
   const fetchDocuments = async () => {
     if (!id) return;
@@ -478,7 +439,7 @@ function PatientDetails() {
       const response = await usersAPI.getAll();
       if (response.success && response.data?.users) {
         // Filter users who have doctor role
-        const doctorUsers = response.data.users.filter((user: any) => {
+        response.data.users.filter((user: any) => {
           // Check if user has roles array and if any role name contains "doctor" (case-insensitive)
           if (user.roles && Array.isArray(user.roles)) {
             return user.roles.some((role: any) => 
@@ -488,14 +449,7 @@ function PatientDetails() {
           // Fallback: check if user.role (legacy field) is "doctor"
           return user.role && user.role.toLowerCase().includes("doctor");
         });
-        const doctorList = doctorUsers.map((user: any) => ({ _id: user._id, name: user.name }));
-        setDoctors(doctorList);
-        setDoctorSuggestions(doctorList);
-        
-        // Auto-select if only one doctor
-        if (doctorList.length === 1) {
-          setVisitForm(prev => ({ ...prev, doctorName: doctorList[0].name }));
-        }
+        // Note: Visits tab was removed; doctor list is not currently used in this page UI.
       }
     } catch (err) {
       console.error("Error fetching doctors:", err);
@@ -569,6 +523,52 @@ function PatientDetails() {
     }
   };
 
+  const handleOpenRemarksModal = (visit: any) => {
+    setSelectedVisitForRemarks(visit);
+    setRemarksForm({
+      receptionRemarks: visit.receptionRemarks || "",
+      doctorRemarks: visit.doctorRemarks || "",
+      remarks: visit.remarks || "",
+    });
+    setShowRemarksModal(true);
+  };
+
+  const handleSaveRemarks = async () => {
+    if (!selectedVisitForRemarks) return;
+    try {
+      const response = await opdAPI.update(selectedVisitForRemarks._id, {
+        receptionRemarks: remarksForm.receptionRemarks,
+        doctorRemarks: remarksForm.doctorRemarks,
+        remarks: remarksForm.remarks,
+      });
+      if (response.success) {
+        showSuccess("Remarks saved successfully");
+        setShowRemarksModal(false);
+        setSelectedVisitForRemarks(null);
+        fetchConsultationSummary();
+      } else {
+        showError(response.message || "Failed to save remarks");
+      }
+    } catch (err) {
+      showError("Error saving remarks");
+      console.error(err);
+    }
+  };
+
+  const isReceptionist = () => {
+    if (!currentUser) return false;
+    const role = currentUser.role?.toLowerCase() || "";
+    const roles = currentUser.roles || [];
+    return role.includes("receptionist") || roles.some((r: any) => r.name?.toLowerCase().includes("receptionist"));
+  };
+
+  const isDoctor = () => {
+    if (!currentUser) return false;
+    const role = currentUser.role?.toLowerCase() || "";
+    const roles = currentUser.roles || [];
+    return role.includes("doctor") || roles.some((r: any) => r.name?.toLowerCase().includes("doctor"));
+  };
+
   const fetchClinicalData = async () => {
     if (!id) return;
     try {
@@ -614,34 +614,166 @@ function PatientDetails() {
     }
   };
 
-  const fetchRemarks = async () => {
+  const savePatientRemarks = async (remarks: { receptionRemarks: string; doctorRemarks: string }) => {
     if (!id) return;
     try {
-      setLoadingRemarks(true);
-      const response = await patientsAPI.getRemarks(id);
+      setSavingRemarks(true);
+      const fd = new FormData();
+      fd.append("receptionRemarks", remarks.receptionRemarks || "");
+      fd.append("doctorRemarks", remarks.doctorRemarks || "");
+      const response = await patientsAPI.update(id, fd);
       if (response.success) {
-        setRemarks(response.data || []);
+        // Update local patient state
+        if (patient) {
+          setPatient({
+            ...patient,
+            receptionRemarks: remarks.receptionRemarks,
+            doctorRemarks: remarks.doctorRemarks,
+          });
+        }
+      } else {
+        showError(response.message || "Failed to save remarks");
       }
     } catch (err) {
-      console.error("Error fetching remarks:", err);
+      showError("Error saving remarks");
+      console.error(err);
     } finally {
-      setLoadingRemarks(false);
+      setSavingRemarks(false);
     }
+  };
+
+  const handleRemarksChange = (field: "receptionRemarks" | "doctorRemarks", value: string) => {
+    const updatedRemarks = { ...patientRemarks, [field]: value };
+    setPatientRemarks(updatedRemarks);
+
+    // Clear existing timeout
+    if (remarksSaveTimeout) {
+      clearTimeout(remarksSaveTimeout);
+    }
+
+    // Set new timeout for auto-save (debounce 1 second)
+    const timeout = setTimeout(() => {
+      savePatientRemarks(updatedRemarks);
+    }, 1000);
+    setRemarksSaveTimeout(timeout);
   };
 
   const fetchBillingInfo = async () => {
     if (!id) return;
     try {
       setLoadingBilling(true);
-      const response = await patientsAPI.getBillingInformation(id);
+      const response = await patientsAPI.getBillingInformation(id, {
+        startDate: billingFilters.startDate || undefined,
+        endDate: billingFilters.endDate || undefined,
+        type: billingFilters.type === "all" ? undefined : billingFilters.type,
+        paymentStatus: billingFilters.paymentStatus || undefined,
+      });
       if (response.success) {
         setBillingInfo(response.data);
       }
     } catch (err) {
       console.error("Error fetching billing info:", err);
+      showError("Error loading billing information");
     } finally {
       setLoadingBilling(false);
     }
+  };
+
+  const handleProcessPayment = async () => {
+    if (!id || selectedBills.size === 0) return;
+    
+    const billsToProcess: Array<{ type: "OPD" | "IPD"; id: string; amount: number }> = [];
+    let totalPending = 0;
+
+    // Collect all bills and calculate amounts
+    const allBills = [
+      ...(billingInfo?.opdRecords || []).map((opd: any) => ({ ...opd, type: "OPD" as const })),
+      ...(billingInfo?.ipdRecords || []).map((ipd: any) => ({ ...ipd, type: "IPD" as const })),
+    ];
+
+    for (const billId of selectedBills) {
+      const bill = allBills.find((b: any) => b._id === billId);
+      if (bill && bill.pendingAmount > 0) {
+        billsToProcess.push({
+          type: bill.type,
+          id: bill._id,
+          amount: bill.pendingAmount,
+        });
+        totalPending += bill.pendingAmount;
+      }
+    }
+
+    if (billsToProcess.length === 0) {
+      showError("No bills selected or all bills are already paid");
+      return;
+    }
+
+    try {
+      setProcessingPayment(true);
+      const response = await patientsAPI.processPayment(id, {
+        bills: billsToProcess,
+        paymentMethod: paymentForm.paymentMethod,
+        paymentDate: paymentForm.paymentDate,
+        notes: paymentForm.notes || undefined,
+      });
+
+      if (response.success) {
+        showSuccess(`Payment of ₹${response.data.totalPaid.toLocaleString()} processed successfully`);
+        setShowPaymentModal(false);
+        setSelectedBills(new Set());
+        setPaymentForm({
+          paymentMethod: "cash",
+          paymentDate: new Date().toISOString().split('T')[0],
+          notes: "",
+        });
+        fetchBillingInfo();
+      } else {
+        showError(response.message || "Failed to process payment");
+      }
+    } catch (err) {
+      showError("Error processing payment");
+      console.error(err);
+    } finally {
+      setProcessingPayment(false);
+    }
+  };
+
+  const handleSelectAllBills = () => {
+    const allBills = [
+      ...(billingInfo?.opdRecords || []).map((opd: any) => opd._id),
+      ...(billingInfo?.ipdRecords || []).map((ipd: any) => ipd._id),
+    ].filter((id: string) => {
+      const bill = [...(billingInfo?.opdRecords || []), ...(billingInfo?.ipdRecords || [])].find((b: any) => b._id === id);
+      return bill && bill.pendingAmount > 0;
+    });
+
+    if (selectedBills.size === allBills.length) {
+      setSelectedBills(new Set());
+    } else {
+      setSelectedBills(new Set(allBills));
+    }
+  };
+
+  const handleSelectBill = (billId: string) => {
+    const newSelected = new Set(selectedBills);
+    if (newSelected.has(billId)) {
+      newSelected.delete(billId);
+    } else {
+      newSelected.add(billId);
+    }
+    setSelectedBills(newSelected);
+  };
+
+  const calculateSelectedTotal = () => {
+    const allBills = [
+      ...(billingInfo?.opdRecords || []).map((opd: any) => ({ ...opd, type: "OPD" as const })),
+      ...(billingInfo?.ipdRecords || []).map((ipd: any) => ({ ...ipd, type: "IPD" as const })),
+    ];
+
+    return Array.from(selectedBills).reduce((total, billId) => {
+      const bill = allBills.find((b: any) => b._id === billId);
+      return total + (bill?.pendingAmount || 0);
+    }, 0);
   };
 
   // Load data when tab changes
@@ -661,33 +793,14 @@ function PatientDetails() {
         if (!engagement) fetchEngagement();
         break;
       case "remarks":
-        if (remarks.length === 0) fetchRemarks();
+        // Remarks are loaded with patient data, no need to fetch separately
         break;
       case "billing":
-        if (!billingInfo) fetchBillingInfo();
+        fetchBillingInfo();
         break;
     }
   }, [activeTab, id]);
 
-  // Handle add remark
-  const handleAddRemark = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!id) return;
-    try {
-      const response = await patientsAPI.createRemark(id, remarkForm);
-      if (response.success) {
-        showSuccess("Remark added successfully");
-        setShowRemarkModal(false);
-        setRemarkForm({ remark: "", remarkType: "general", allowedRoles: ["doctor", "nurse"], isPrivate: false });
-        fetchRemarks();
-      } else {
-        showError(response.message || "Failed to add remark");
-      }
-    } catch (err) {
-      showError("Error adding remark");
-      console.error(err);
-    }
-  };
 
   const formatFileSize = (bytes: number) => {
     if (bytes === 0) return "0 Bytes";
@@ -923,7 +1036,7 @@ function PatientDetails() {
                           <div className="bg-white rounded-lg p-3 border border-slate-200">
                             <p className="text-xs font-medium text-slate-600">Total Visits</p>
                             <p className="mt-0.5 text-base font-semibold text-slate-900">
-                              {visits.length}
+                              {patient.totalVisits || 0}
                             </p>
                           </div>
                         </div>
@@ -1035,13 +1148,12 @@ function PatientDetails() {
                 {[
                   { id: "overview", label: "Overview", icon: "M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" },
                   { id: "medical", label: "Medical Info", icon: "M19.428 15.428a2 2 0 00-1.022-.547l-2.387-.477a6 6 0 00-3.86.517l-.318.158a6 6 0 01-3.86.517L6.05 15.21a2 2 0 00-1.806.547M8 4h8l-1 1v5.172a2 2 0 00.586 1.414l5 5c1.26 1.26.367 3.414-1.415 3.414H4.828c-1.782 0-2.674-2.154-1.414-3.414l5-5A2 2 0 009 10.172V5L8 4z" },
-                  { id: "visits", label: `Visits (${visits.length})`, icon: "M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" },
                   { id: "documents", label: `Documents (${documents.length})`, icon: "M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" },
                   { id: "consultation", label: "Consultation", icon: "M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2" },
                   { id: "clinical", label: "Clinical Data", icon: "M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" },
                   { id: "operative", label: "Operative", icon: "M12 6V4m0 2a2 2 0 100 4m0-4a2 2 0 110 4m-6 8a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4m6 6v10m6-2a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4" },
                   { id: "engagement", label: "Engagement", icon: "M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z" },
-                  { id: "remarks", label: `Remarks (${remarks.length})`, icon: "M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" },
+                  { id: "remarks", label: "Remarks", icon: "M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" },
                   { id: "billing", label: "Billing", icon: "M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z" },
                 ].map((tab) => (
                   <button
@@ -1840,6 +1952,51 @@ function PatientDetails() {
                 </div>
               </div>
 
+              {/* Visit Statistics Card */}
+              <div className="rounded-lg border border-slate-200 bg-white p-5 shadow-sm">
+                <h3 className="text-lg font-semibold text-slate-900 mb-4 flex items-center gap-2">
+                  <svg className="h-5 w-5 text-indigo-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" />
+                  </svg>
+                  Visit Statistics
+                </h3>
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                  <div className="rounded-lg border border-blue-200 bg-blue-50/50 p-4">
+                    <p className="text-xs font-medium text-blue-700">Total OPD Visits</p>
+                    <p className="mt-2 text-2xl font-bold text-blue-900">{patient.opdCount || 0}</p>
+                    <button
+                      onClick={() => {
+                        navigate(`/opd?patientId=${patient._id}`);
+                      }}
+                      className="mt-2 text-xs text-blue-600 hover:text-blue-800 font-medium"
+                    >
+                      View OPD Records →
+                    </button>
+                  </div>
+                  <div className="rounded-lg border border-emerald-200 bg-emerald-50/50 p-4">
+                    <p className="text-xs font-medium text-emerald-700">Total IPD Visits</p>
+                    <p className="mt-2 text-2xl font-bold text-emerald-900">{patient.ipdCount || 0}</p>
+                    <button
+                      onClick={() => {
+                        navigate(`/ipd?patientId=${patient._id}`);
+                      }}
+                      className="mt-2 text-xs text-emerald-600 hover:text-emerald-800 font-medium"
+                    >
+                      View IPD Records →
+                    </button>
+                  </div>
+                  <div className="rounded-lg border border-indigo-200 bg-indigo-50/50 p-4">
+                    <p className="text-xs font-medium text-indigo-700">Total Visits</p>
+                    <p className="mt-2 text-2xl font-bold text-indigo-900">{patient.totalVisits || 0}</p>
+                    {patient.activeIPDCount && patient.activeIPDCount > 0 && (
+                      <p className="mt-2 text-xs text-indigo-600">
+                        {patient.activeIPDCount} Active Admission{patient.activeIPDCount > 1 ? "s" : ""}
+                      </p>
+                    )}
+                  </div>
+                </div>
+              </div>
+
               {/* Contact Information Card */}
               <div className="rounded-lg border border-slate-200 bg-white p-5 shadow-sm">
                 <h3 className="text-lg font-semibold text-slate-900 mb-4 flex items-center gap-2">
@@ -1993,116 +2150,6 @@ function PatientDetails() {
                   <p className="text-sm text-slate-900 whitespace-pre-wrap">{patient.notes}</p>
                 </div>
               )}
-            </div>
-          )}
-
-          {/* Tab Content - Visits */}
-          {!isEditing && activeTab === "visits" && (
-            <div className="rounded-xl border border-slate-200 bg-white shadow-sm">
-              <div className="flex flex-col gap-3 border-b border-slate-200 px-4 py-3 sm:flex-row sm:items-center sm:justify-between sm:px-6 sm:py-4">
-                <div>
-                  <h2 className="text-lg font-semibold text-slate-900">Visit History</h2>
-                  <p className="mt-0.5 text-xs text-slate-600 sm:text-sm">
-                    Track all patient visits and consultations
-                  </p>
-                </div>
-                {hasPermission(PERMISSIONS.PATIENTS_EDIT) && (
-                  <button
-                    onClick={() => {
-                      const defaultDoctorName = doctors.length === 1 ? doctors[0].name : "";
-                      setVisitForm(prev => ({
-                        ...prev,
-                        visitDate: new Date().toISOString().split('T')[0],
-                        visitType: "Consultation",
-                        chiefComplaint: "",
-                        diagnosis: "",
-                        treatment: "",
-                        notes: "",
-                        doctorName: defaultDoctorName,
-                      }));
-                      setShowVisitModal(true);
-                    }}
-                    className="w-full rounded-xl bg-indigo-700 px-4 py-2 text-xs font-semibold text-white shadow-md shadow-indigo-500/30 transition hover:bg-indigo-800 hover:shadow-lg hover:shadow-indigo-500/40 sm:w-auto sm:px-5 sm:py-2.5 sm:text-sm"
-                  >
-                    + Add Visit
-                  </button>
-                )}
-              </div>
-              <div className="p-4 sm:p-6">
-                {loadingVisits ? (
-                  <div className="flex items-center justify-center py-8">
-                    <div className="h-6 w-6 animate-spin rounded-full border-2 border-indigo-600 border-r-transparent"></div>
-                  </div>
-                ) : visits.length === 0 ? (
-                  <div className="py-8 text-center">
-                    <svg
-                      className="mx-auto mb-4 h-12 w-12 text-slate-400"
-                      fill="none"
-                      viewBox="0 0 24 24"
-                      stroke="currentColor"
-                    >
-                      <path
-                        strokeLinecap="round"
-                        strokeLinejoin="round"
-                        strokeWidth={2}
-                        d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"
-                      />
-                    </svg>
-                    <p className="text-sm text-slate-600">No visits recorded yet</p>
-                  </div>
-                ) : (
-                  <div className="space-y-4">
-                    {visits.map((visit) => (
-                      <div
-                        key={visit._id}
-                        className="rounded-lg border border-slate-200 bg-slate-50/50 p-4 hover:shadow-md transition-shadow"
-                      >
-                        <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
-                          <div className="flex-1">
-                            <div className="flex flex-wrap items-center gap-2 mb-2">
-                              <span className="inline-flex rounded-lg border border-indigo-200 bg-indigo-50 px-2.5 py-1 text-xs font-semibold text-indigo-700">
-                                {visit.visitType}
-                              </span>
-                              <span className="text-xs text-slate-600">
-                                {new Date(visit.visitDate).toLocaleDateString("en-US", {
-                                  month: "short",
-                                  day: "numeric",
-                                  year: "numeric",
-                                })}
-                              </span>
-                              {visit.doctorName && (
-                                <span className="text-xs text-slate-600">
-                                  Dr. {visit.doctorName}
-                                </span>
-                              )}
-                            </div>
-                            {visit.chiefComplaint && (
-                              <p className="mb-1 text-sm font-medium text-slate-900">
-                                Chief Complaint: {visit.chiefComplaint}
-                              </p>
-                            )}
-                            {visit.diagnosis && (
-                              <p className="mb-1 text-sm text-slate-700">
-                                <span className="font-medium">Diagnosis:</span> {visit.diagnosis}
-                              </p>
-                            )}
-                            {visit.treatment && (
-                              <p className="mb-1 text-sm text-slate-700">
-                                <span className="font-medium">Treatment:</span> {visit.treatment}
-                              </p>
-                            )}
-                            {visit.notes && (
-                              <p className="mt-2 text-sm text-slate-600 whitespace-pre-wrap">
-                                {visit.notes}
-                              </p>
-                            )}
-                          </div>
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                )}
-              </div>
             </div>
           )}
 
@@ -2291,10 +2338,51 @@ function PatientDetails() {
                               </p>
                             )}
                             {visit.treatment && (
-                              <p className="text-sm text-slate-700">
+                              <p className="text-sm text-slate-700 mb-1">
                                 <span className="font-medium">Treatment:</span> {visit.treatment}
                               </p>
                             )}
+                            {/* Remarks Section */}
+                            <div className="mt-3 pt-3 border-t border-slate-200">
+                              <div className="flex items-center justify-between mb-2">
+                                <h4 className="text-xs font-semibold text-slate-700">Remarks</h4>
+                                {(isReceptionist() || isDoctor() || hasPermission(PERMISSIONS.PATIENTS_EDIT)) && (
+                                  <button
+                                    onClick={() => handleOpenRemarksModal(visit)}
+                                    className="text-xs text-indigo-600 hover:text-indigo-800 font-medium"
+                                  >
+                                    {visit.receptionRemarks || visit.doctorRemarks || visit.remarks ? "Edit Remarks" : "Add Remarks"}
+                                  </button>
+                                )}
+                              </div>
+                              {visit.remarks && (
+                                <div className="mb-2">
+                                  <p className="text-xs font-medium text-slate-600 mb-1">General Remarks:</p>
+                                  <p className="text-xs text-slate-700 bg-slate-50 border border-slate-200 rounded p-2 whitespace-pre-wrap">
+                                    {visit.remarks}
+                                  </p>
+                                </div>
+                              )}
+                              {visit.receptionRemarks && (
+                                <div className="mb-2">
+                                  <p className="text-xs font-medium text-slate-600 mb-1">Reception Remarks:</p>
+                                  <p className="text-xs text-slate-700 bg-blue-50 border border-blue-200 rounded p-2 whitespace-pre-wrap">
+                                    {visit.receptionRemarks}
+                                  </p>
+                                </div>
+                              )}
+                              {visit.doctorRemarks && (
+                                <div>
+                                  <p className="text-xs font-medium text-slate-600 mb-1">Doctor Remarks:</p>
+                                  <p className="text-xs text-slate-700 bg-emerald-50 border border-emerald-200 rounded p-2 whitespace-pre-wrap">
+                                    {visit.doctorRemarks}
+                                  </p>
+                                </div>
+                              )}
+                              {!visit.receptionRemarks && !visit.doctorRemarks && !visit.remarks && (
+                                <p className="text-xs text-slate-500 italic">No remarks added yet</p>
+                              )}
+                            </div>
                           </div>
                         ))}
                       </div>
@@ -2969,67 +3057,207 @@ function PatientDetails() {
           {/* Tab Content - Remarks */}
           {!isEditing && activeTab === "remarks" && (
             <div className="rounded-xl border border-slate-200 bg-white shadow-sm">
-              <div className="flex flex-col gap-3 border-b border-slate-200 px-4 py-3 sm:flex-row sm:items-center sm:justify-between sm:px-6 sm:py-4">
-                <div>
-                  <h2 className="text-lg font-semibold text-slate-900">Remarks</h2>
+              <div className="border-b border-slate-200 px-4 py-3 sm:px-6 sm:py-4">
+                <h2 className="text-lg font-semibold text-slate-900">Patient Remarks</h2>
                   <p className="mt-0.5 text-xs text-slate-600 sm:text-sm">
-                    General notes and comments about the patient
-                  </p>
-                </div>
-                {hasPermission(PERMISSIONS.PATIENTS_REMARKS_EDIT) && (
-                  <button
-                    onClick={() => setShowRemarkModal(true)}
-                    className="rounded-lg bg-indigo-600 px-4 py-2 text-sm font-semibold text-white transition hover:bg-indigo-700"
-                  >
-                    Add Remark
-                  </button>
-                )}
+                  Add remarks for reception and doctor
+                </p>
               </div>
               <div className="p-4 sm:p-6">
-                {loadingRemarks ? (
-                  <div className="flex items-center justify-center py-8">
-                    <div className="h-6 w-6 animate-spin rounded-full border-2 border-indigo-600 border-r-transparent"></div>
+                <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                  {/* Reception Remarks Card */}
+                  <div className="rounded-lg border border-slate-200 bg-white shadow-sm">
+                    <div className="border-b border-slate-200 px-4 py-3">
+                      <h3 className="text-base font-semibold text-slate-900">Reception Remarks</h3>
                   </div>
-                ) : remarks.length > 0 ? (
-                  <div className="space-y-3">
-                    {remarks.map((remark: any) => (
-                      <div key={remark._id} className="rounded-lg border border-slate-200 bg-slate-50/50 p-4">
-                        <div className="flex items-start justify-between mb-2">
-                          <div>
-                            <span className="text-xs font-medium text-slate-600">
-                              {remark.createdBy?.name || "Unknown"}
-                            </span>
-                            <span className="mx-2 text-xs text-slate-400">•</span>
-                            <span className="text-xs text-slate-600">
-                              {new Date(remark.createdAt).toLocaleDateString()}
-                            </span>
+                    <div className="p-4">
+                      <textarea
+                        value={patientRemarks.receptionRemarks}
+                        onChange={(e) => handleRemarksChange("receptionRemarks", e.target.value)}
+                        rows={12}
+                        className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm text-slate-900 placeholder:text-slate-400 focus:border-indigo-500 focus:outline-none focus:ring-2 focus:ring-indigo-200 resize-none"
+                        placeholder="Write description..."
+                        disabled={!isReceptionist() && !hasPermission(PERMISSIONS.PATIENTS_EDIT)}
+                      />
+                      {savingRemarks && (
+                        <div className="mt-2 flex items-center gap-2 text-xs text-slate-500">
+                          <div className="h-3 w-3 animate-spin rounded-full border-2 border-indigo-600 border-r-transparent"></div>
+                          <span>Saving...</span>
                           </div>
-                          <span className="rounded-full bg-indigo-100 px-2 py-0.5 text-xs font-medium text-indigo-700">
-                            {remark.remarkType}
-                          </span>
+                      )}
                         </div>
-                        <p className="text-sm text-slate-900">{remark.remark}</p>
                       </div>
-                    ))}
+
+                  {/* Doctor Remarks Card */}
+                  <div className="rounded-lg border border-slate-200 bg-white shadow-sm">
+                    <div className="border-b border-slate-200 px-4 py-3">
+                      <h3 className="text-base font-semibold text-slate-900">Doctor Remarks</h3>
                   </div>
-                ) : (
-                  <div className="flex flex-col items-center justify-center py-8 text-center">
-                    <p className="text-sm text-slate-600">No remarks recorded yet</p>
+                    <div className="p-4">
+                      <textarea
+                        value={patientRemarks.doctorRemarks}
+                        onChange={(e) => handleRemarksChange("doctorRemarks", e.target.value)}
+                        rows={12}
+                        className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm text-slate-900 placeholder:text-slate-400 focus:border-indigo-500 focus:outline-none focus:ring-2 focus:ring-indigo-200 resize-none"
+                        placeholder="Write description..."
+                        disabled={!isDoctor() && !hasPermission(PERMISSIONS.PATIENTS_EDIT)}
+                      />
+                      {savingRemarks && (
+                        <div className="mt-2 flex items-center gap-2 text-xs text-slate-500">
+                          <div className="h-3 w-3 animate-spin rounded-full border-2 border-indigo-600 border-r-transparent"></div>
+                          <span>Saving...</span>
                   </div>
                 )}
+                    </div>
+                  </div>
+                </div>
               </div>
             </div>
           )}
 
           {/* Tab Content - Billing Information */}
           {!isEditing && activeTab === "billing" && (
+            <div className="space-y-6">
+              {/* Outstanding Balance Card - Prominently Displayed */}
+              {billingInfo && billingInfo.summary?.overall?.pending > 0 && (
+                <div className="rounded-xl border-2 border-rose-300 bg-gradient-to-r from-rose-50 to-rose-100 p-6 shadow-lg">
+                  <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+                    <div>
+                      <h3 className="text-sm font-semibold text-rose-900 mb-1">Total Outstanding Balance</h3>
+                      <p className="text-4xl font-bold text-rose-700">₹{billingInfo.summary?.overall?.pending?.toLocaleString() || 0}</p>
+                      <div className="mt-2 flex gap-4 text-xs text-rose-800">
+                        <span>OPD: ₹{billingInfo.summary?.opd?.pending?.toLocaleString() || 0}</span>
+                        <span>IPD: ₹{billingInfo.summary?.ipd?.pending?.toLocaleString() || 0}</span>
+                      </div>
+                    </div>
+                    {hasPermission(PERMISSIONS.PATIENTS_BILLING) && (
+                      <button
+                        onClick={() => {
+                          // Select all pending bills
+                          const allPendingBills = [
+                            ...(billingInfo?.opdRecords || []).filter((opd: any) => opd.pendingAmount > 0).map((opd: any) => opd._id),
+                            ...(billingInfo?.ipdRecords || []).filter((ipd: any) => ipd.pendingAmount > 0).map((ipd: any) => ipd._id),
+                          ];
+                          setSelectedBills(new Set(allPendingBills));
+                          setShowPaymentModal(true);
+                        }}
+                        className="rounded-lg bg-rose-600 px-6 py-3 text-sm font-semibold text-white shadow-md transition hover:bg-rose-700 hover:shadow-lg"
+                      >
+                        Pay All Outstanding
+                      </button>
+                    )}
+                  </div>
+                </div>
+              )}
+
             <div className="rounded-xl border border-slate-200 bg-white shadow-sm">
               <div className="border-b border-slate-200 px-4 py-3 sm:px-6 sm:py-4">
-                <h2 className="text-lg font-semibold text-slate-900">Billing Information</h2>
+                  <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+                    <div>
+                      <h2 className="text-lg font-semibold text-slate-900">Overall Billing</h2>
                 <p className="mt-0.5 text-xs text-slate-600 sm:text-sm">
-                  Aggregated billing from OPD and IPD records
+                        Consolidated view of all OPD and IPD bills
                 </p>
               </div>
+                    <div className="flex items-center gap-2">
+                      {hasPermission(PERMISSIONS.PATIENTS_BILLING) && selectedBills.size > 0 && (
+                        <button
+                          onClick={() => setShowPaymentModal(true)}
+                          className="rounded-lg bg-indigo-600 px-4 py-2 text-sm font-semibold text-white transition hover:bg-indigo-700"
+                        >
+                          Process Payment ({selectedBills.size})
+                        </button>
+                      )}
+                      <button
+                        onClick={() => {
+                          // Export/Print functionality
+                          window.print();
+                        }}
+                        className="rounded-lg border border-slate-300 bg-white px-4 py-2 text-sm font-medium text-slate-700 transition hover:bg-slate-50"
+                      >
+                        <svg className="h-4 w-4 inline mr-1" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 17h2a2 2 0 002-2v-4a2 2 0 00-2-2H5a2 2 0 00-2 2v4a2 2 0 002 2h2m2 4h6a2 2 0 002-2v-4a2 2 0 00-2-2H9a2 2 0 00-2 2v4a2 2 0 002 2zm8-12V5a2 2 0 00-2-2H9a2 2 0 00-2 2v4h10z" />
+                        </svg>
+                        Print/Export
+                      </button>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Filters */}
+                <div className="border-b border-slate-200 px-4 py-3 sm:px-6 bg-slate-50/50">
+                  <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
+                    <div>
+                      <label className="block text-xs font-medium text-slate-700 mb-1">Start Date</label>
+                      <input
+                        type="date"
+                        value={billingFilters.startDate}
+                        onChange={(e) => {
+                          setBillingFilters({ ...billingFilters, startDate: e.target.value });
+                        }}
+                        className="w-full rounded-lg border border-slate-300 px-3 py-1.5 text-sm focus:border-indigo-500 focus:outline-none focus:ring-2 focus:ring-indigo-200"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-xs font-medium text-slate-700 mb-1">End Date</label>
+                      <input
+                        type="date"
+                        value={billingFilters.endDate}
+                        onChange={(e) => {
+                          setBillingFilters({ ...billingFilters, endDate: e.target.value });
+                        }}
+                        className="w-full rounded-lg border border-slate-300 px-3 py-1.5 text-sm focus:border-indigo-500 focus:outline-none focus:ring-2 focus:ring-indigo-200"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-xs font-medium text-slate-700 mb-1">Type</label>
+                      <select
+                        value={billingFilters.type}
+                        onChange={(e) => {
+                          setBillingFilters({ ...billingFilters, type: e.target.value as "OPD" | "IPD" | "all" });
+                        }}
+                        className="w-full rounded-lg border border-slate-300 px-3 py-1.5 text-sm focus:border-indigo-500 focus:outline-none focus:ring-2 focus:ring-indigo-200"
+                      >
+                        <option value="all">All</option>
+                        <option value="OPD">OPD</option>
+                        <option value="IPD">IPD</option>
+                      </select>
+                    </div>
+                    <div>
+                      <label className="block text-xs font-medium text-slate-700 mb-1">Payment Status</label>
+                      <select
+                        value={billingFilters.paymentStatus}
+                        onChange={(e) => {
+                          setBillingFilters({ ...billingFilters, paymentStatus: e.target.value as "" | "pending" | "partial" | "paid" });
+                        }}
+                        className="w-full rounded-lg border border-slate-300 px-3 py-1.5 text-sm focus:border-indigo-500 focus:outline-none focus:ring-2 focus:ring-indigo-200"
+                      >
+                        <option value="">All</option>
+                        <option value="pending">Pending</option>
+                        <option value="partial">Partial</option>
+                        <option value="paid">Paid</option>
+                      </select>
+                    </div>
+                  </div>
+                  <div className="mt-3 flex items-center gap-2">
+                    <button
+                      onClick={fetchBillingInfo}
+                      className="rounded-lg bg-indigo-600 px-4 py-1.5 text-xs font-semibold text-white transition hover:bg-indigo-700"
+                    >
+                      Apply Filters
+                    </button>
+                    <button
+                      onClick={() => {
+                        setBillingFilters({ startDate: "", endDate: "", type: "all", paymentStatus: "" });
+                        fetchBillingInfo();
+                      }}
+                      className="rounded-lg border border-slate-300 bg-white px-4 py-1.5 text-xs font-medium text-slate-700 transition hover:bg-slate-50"
+                    >
+                      Clear
+                    </button>
+                  </div>
+                </div>
+
               <div className="p-4 sm:p-6">
                 {loadingBilling ? (
                   <div className="flex items-center justify-center py-8">
@@ -3038,25 +3266,31 @@ function PatientDetails() {
                 ) : billingInfo ? (
                   <div className="space-y-6">
                     {/* Summary Cards */}
-                    <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
+                      <div className="grid grid-cols-1 gap-4 sm:grid-cols-4">
                       <div className="rounded-lg border border-slate-200 bg-slate-50/50 p-4">
                         <p className="text-xs font-medium text-slate-600">Total Billing</p>
-                        <p className="mt-1 text-2xl font-bold text-slate-900">₹{billingInfo.summary?.overall?.total?.toLocaleString() || 0}</p>
+                          <p className="mt-1 text-xl font-bold text-slate-900">₹{billingInfo.summary?.overall?.total?.toLocaleString() || 0}</p>
                       </div>
                       <div className="rounded-lg border border-slate-200 bg-slate-50/50 p-4">
                         <p className="text-xs font-medium text-slate-600">Total Paid</p>
-                        <p className="mt-1 text-2xl font-bold text-green-600">₹{billingInfo.summary?.overall?.paid?.toLocaleString() || 0}</p>
+                          <p className="mt-1 text-xl font-bold text-green-600">₹{billingInfo.summary?.overall?.paid?.toLocaleString() || 0}</p>
                       </div>
                       <div className="rounded-lg border border-slate-200 bg-slate-50/50 p-4">
-                        <p className="text-xs font-medium text-slate-600">Pending</p>
-                        <p className="mt-1 text-2xl font-bold text-rose-600">₹{billingInfo.summary?.overall?.pending?.toLocaleString() || 0}</p>
+                          <p className="text-xs font-medium text-slate-600">Outstanding</p>
+                          <p className="mt-1 text-xl font-bold text-rose-600">₹{billingInfo.summary?.overall?.pending?.toLocaleString() || 0}</p>
+                        </div>
+                        <div className="rounded-lg border border-slate-200 bg-slate-50/50 p-4">
+                          <p className="text-xs font-medium text-slate-600">Total Bills</p>
+                          <p className="mt-1 text-xl font-bold text-slate-900">
+                            {((billingInfo.opdRecords?.length || 0) + (billingInfo.ipdRecords?.length || 0))}
+                          </p>
                       </div>
                     </div>
 
                     {/* OPD vs IPD Breakdown */}
                     <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-                      <div className="rounded-lg border border-slate-200 bg-slate-50/50 p-4">
-                        <h3 className="mb-3 text-sm font-semibold text-slate-900">OPD Billing</h3>
+                        <div className="rounded-lg border border-blue-200 bg-blue-50/50 p-4">
+                          <h3 className="mb-3 text-sm font-semibold text-slate-900">OPD Billing Summary</h3>
                         <div className="space-y-1 text-sm">
                           <div className="flex justify-between">
                             <span className="text-slate-600">Total:</span>
@@ -3070,10 +3304,14 @@ function PatientDetails() {
                             <span className="text-slate-600">Pending:</span>
                             <span className="font-medium text-rose-600">₹{billingInfo.summary?.opd?.pending?.toLocaleString() || 0}</span>
                           </div>
+                            <div className="flex justify-between">
+                              <span className="text-slate-600">Count:</span>
+                              <span className="font-medium">{billingInfo.summary?.opd?.count || 0} visits</span>
                         </div>
                       </div>
-                      <div className="rounded-lg border border-slate-200 bg-slate-50/50 p-4">
-                        <h3 className="mb-3 text-sm font-semibold text-slate-900">IPD Billing</h3>
+                        </div>
+                        <div className="rounded-lg border border-emerald-200 bg-emerald-50/50 p-4">
+                          <h3 className="mb-3 text-sm font-semibold text-slate-900">IPD Billing Summary</h3>
                         <div className="space-y-1 text-sm">
                           <div className="flex justify-between">
                             <span className="text-slate-600">Total:</span>
@@ -3087,233 +3325,226 @@ function PatientDetails() {
                             <span className="text-slate-600">Pending:</span>
                             <span className="font-medium text-rose-600">₹{billingInfo.summary?.ipd?.pending?.toLocaleString() || 0}</span>
                           </div>
+                            <div className="flex justify-between">
+                              <span className="text-slate-600">Count:</span>
+                              <span className="font-medium">{billingInfo.summary?.ipd?.count || 0} admissions</span>
+                            </div>
                         </div>
                       </div>
                     </div>
 
-                    {/* Pending Invoices */}
-                    {billingInfo.pendingInvoices?.length > 0 && (
+                      {/* All Bills Table */}
                       <div>
-                        <h3 className="mb-3 text-base font-semibold text-slate-900">Pending Invoices</h3>
-                        <div className="space-y-2">
-                          {billingInfo.pendingInvoices.map((invoice: any, idx: number) => (
-                            <div key={idx} className="rounded-lg border border-rose-200 bg-rose-50/50 p-3">
-                              <div className="flex items-center justify-between">
-                                <div>
-                                  <span className="font-medium text-slate-900">{invoice.reference}</span>
-                                  <span className="ml-2 text-xs text-slate-600">({invoice.type})</span>
-                                </div>
-                                <span className="font-semibold text-rose-600">₹{invoice.pendingAmount?.toLocaleString() || 0}</span>
-                              </div>
-                            </div>
-                          ))}
-                        </div>
+                        <div className="mb-4 flex items-center justify-between">
+                          <h3 className="text-base font-semibold text-slate-900">All Bills & Invoices</h3>
+                          {hasPermission(PERMISSIONS.PATIENTS_BILLING) && (
+                            <div className="flex items-center gap-2">
+                              <button
+                                onClick={handleSelectAllBills}
+                                className="text-xs text-indigo-600 hover:text-indigo-800 font-medium"
+                              >
+                                {selectedBills.size > 0 ? "Deselect All" : "Select All Pending"}
+                              </button>
                       </div>
                     )}
                   </div>
-                ) : (
-                  <div className="flex flex-col items-center justify-center py-8 text-center">
-                    <p className="text-sm text-slate-600">No billing information available</p>
-                  </div>
-                )}
+                        <div className="overflow-x-auto">
+                          <table className="min-w-full divide-y divide-slate-200">
+                            <thead className="bg-slate-50">
+                              <tr>
+                                {hasPermission(PERMISSIONS.PATIENTS_BILLING) && (
+                                  <th scope="col" className="px-3 py-2 text-left text-xs font-semibold text-slate-700">
+                                    <input
+                                      type="checkbox"
+                                      checked={selectedBills.size > 0 && selectedBills.size === [...(billingInfo?.opdRecords || []), ...(billingInfo?.ipdRecords || [])].filter((b: any) => b.pendingAmount > 0).length}
+                                      onChange={handleSelectAllBills}
+                                      className="rounded border-slate-300 text-indigo-600 focus:ring-indigo-500"
+                                    />
+                                  </th>
+                                )}
+                                <th scope="col" className="px-3 py-2 text-left text-xs font-semibold text-slate-700">Bill #</th>
+                                <th scope="col" className="px-3 py-2 text-left text-xs font-semibold text-slate-700">Type</th>
+                                <th scope="col" className="px-3 py-2 text-left text-xs font-semibold text-slate-700">Date</th>
+                                <th scope="col" className="px-3 py-2 text-left text-xs font-semibold text-slate-700">Doctor</th>
+                                <th scope="col" className="px-3 py-2 text-right text-xs font-semibold text-slate-700">Total</th>
+                                <th scope="col" className="px-3 py-2 text-right text-xs font-semibold text-slate-700">Paid</th>
+                                <th scope="col" className="px-3 py-2 text-right text-xs font-semibold text-slate-700">Pending</th>
+                                <th scope="col" className="px-3 py-2 text-left text-xs font-semibold text-slate-700">Status</th>
+                                <th scope="col" className="px-3 py-2 text-left text-xs font-semibold text-slate-700">Actions</th>
+                              </tr>
+                            </thead>
+                            <tbody className="divide-y divide-slate-200 bg-white">
+                              {[...(billingInfo.opdRecords || []), ...(billingInfo.ipdRecords || [])]
+                                .sort((a: any, b: any) => {
+                                  const dateA = a.type === "OPD" ? new Date(a.visitDate) : new Date(a.admissionDate);
+                                  const dateB = b.type === "OPD" ? new Date(b.visitDate) : new Date(b.admissionDate);
+                                  return dateB.getTime() - dateA.getTime();
+                                })
+                                .map((bill: any) => (
+                                  <tr key={bill._id} className="hover:bg-slate-50">
+                                    {hasPermission(PERMISSIONS.PATIENTS_BILLING) && (
+                                      <td className="px-3 py-2">
+                                        {bill.pendingAmount > 0 && (
+                                          <input
+                                            type="checkbox"
+                                            checked={selectedBills.has(bill._id)}
+                                            onChange={() => handleSelectBill(bill._id)}
+                                            className="rounded border-slate-300 text-indigo-600 focus:ring-indigo-500"
+                                          />
+                                        )}
+                                      </td>
+                                    )}
+                                    <td className="px-3 py-2 whitespace-nowrap">
+                                      <span className="text-sm font-medium text-slate-900">
+                                        {bill.type === "OPD" ? bill.opdNumber : bill.ipdNumber}
+                                      </span>
+                                    </td>
+                                    <td className="px-3 py-2 whitespace-nowrap">
+                                      <span className={`inline-flex rounded-full px-2 py-0.5 text-xs font-semibold ${
+                                        bill.type === "OPD" 
+                                          ? "bg-blue-100 text-blue-800" 
+                                          : "bg-emerald-100 text-emerald-800"
+                                      }`}>
+                                        {bill.type}
+                                      </span>
+                                    </td>
+                                    <td className="px-3 py-2 whitespace-nowrap text-sm text-slate-600">
+                                      {bill.type === "OPD" 
+                                        ? new Date(bill.visitDate).toLocaleDateString("en-IN")
+                                        : new Date(bill.admissionDate).toLocaleDateString("en-IN")
+                                      }
+                                    </td>
+                                    <td className="px-3 py-2 whitespace-nowrap text-sm text-slate-600">
+                                      {bill.doctorId?.name || "N/A"}
+                                    </td>
+                                    <td className="px-3 py-2 whitespace-nowrap text-sm font-medium text-slate-900 text-right">
+                                      ₹{bill.totalAmount?.toLocaleString() || 0}
+                                    </td>
+                                    <td className="px-3 py-2 whitespace-nowrap text-sm text-green-600 text-right">
+                                      ₹{bill.paidAmount?.toLocaleString() || 0}
+                                    </td>
+                                    <td className="px-3 py-2 whitespace-nowrap text-sm font-semibold text-rose-600 text-right">
+                                      ₹{bill.pendingAmount?.toLocaleString() || 0}
+                                    </td>
+                                    <td className="px-3 py-2 whitespace-nowrap">
+                                      <span className={`inline-flex rounded-full px-2 py-0.5 text-xs font-semibold ${
+                                        bill.paymentStatus === "paid"
+                                          ? "bg-green-100 text-green-800"
+                                          : bill.paymentStatus === "partial"
+                                          ? "bg-amber-100 text-amber-800"
+                                          : "bg-rose-100 text-rose-800"
+                                      }`}>
+                                        {bill.paymentStatus || "pending"}
+                                      </span>
+                                    </td>
+                                    <td className="px-3 py-2 whitespace-nowrap text-sm">
+                                      <div className="flex items-center gap-2">
+                                        <button
+                                          onClick={() => {
+                                            // View invoice/receipt
+                                            window.open(`/${bill.type === "OPD" ? "opd" : "ipd"}/${bill._id}`, "_blank");
+                                          }}
+                                          className="text-indigo-600 hover:text-indigo-800 font-medium"
+                                        >
+                                          View
+                                        </button>
+                                        {bill.pendingAmount > 0 && hasPermission(PERMISSIONS.PATIENTS_BILLING) && (
+                        <button
+                          onClick={() => {
+                                              setSelectedBills(new Set([bill._id]));
+                                              setShowPaymentModal(true);
+                          }}
+                                            className="text-green-600 hover:text-green-800 font-medium"
+                        >
+                                            Pay
+                        </button>
+                                        )}
+                                      </div>
+                                    </td>
+                                  </tr>
+                      ))}
+                            </tbody>
+                          </table>
+                          {[...(billingInfo.opdRecords || []), ...(billingInfo.ipdRecords || [])].length === 0 && (
+                            <div className="py-8 text-center">
+                              <p className="text-sm text-slate-600">No bills found</p>
+                    </div>
+                  )}
+                </div>
+                </div>
+
+                      {/* Payment History */}
+                      {billingInfo.paymentHistory?.length > 0 && (
+                <div>
+                          <h3 className="mb-3 text-base font-semibold text-slate-900">Payment History</h3>
+                          <div className="overflow-x-auto">
+                            <table className="min-w-full divide-y divide-slate-200">
+                              <thead className="bg-slate-50">
+                                <tr>
+                                  <th scope="col" className="px-3 py-2 text-left text-xs font-semibold text-slate-700">Date</th>
+                                  <th scope="col" className="px-3 py-2 text-left text-xs font-semibold text-slate-700">Reference</th>
+                                  <th scope="col" className="px-3 py-2 text-left text-xs font-semibold text-slate-700">Type</th>
+                                  <th scope="col" className="px-3 py-2 text-right text-xs font-semibold text-slate-700">Amount</th>
+                                  <th scope="col" className="px-3 py-2 text-left text-xs font-semibold text-slate-700">Method</th>
+                                  <th scope="col" className="px-3 py-2 text-left text-xs font-semibold text-slate-700">Status</th>
+                                </tr>
+                              </thead>
+                              <tbody className="divide-y divide-slate-200 bg-white">
+                                {billingInfo.paymentHistory.map((payment: any, idx: number) => (
+                                  <tr key={idx} className="hover:bg-slate-50">
+                                    <td className="px-3 py-2 whitespace-nowrap text-sm text-slate-600">
+                                      {new Date(payment.date).toLocaleDateString("en-IN")}
+                                    </td>
+                                    <td className="px-3 py-2 whitespace-nowrap text-sm font-medium text-slate-900">
+                                      {payment.reference}
+                                    </td>
+                                    <td className="px-3 py-2 whitespace-nowrap">
+                                      <span className={`inline-flex rounded-full px-2 py-0.5 text-xs font-semibold ${
+                                        payment.type === "OPD" 
+                                          ? "bg-blue-100 text-blue-800" 
+                                          : "bg-emerald-100 text-emerald-800"
+                                      }`}>
+                                        {payment.type}
+                                      </span>
+                                    </td>
+                                    <td className="px-3 py-2 whitespace-nowrap text-sm font-medium text-green-600 text-right">
+                                      ₹{payment.amount?.toLocaleString() || 0}
+                                    </td>
+                                    <td className="px-3 py-2 whitespace-nowrap text-sm text-slate-600 capitalize">
+                                      {payment.method || "N/A"}
+                                    </td>
+                                    <td className="px-3 py-2 whitespace-nowrap">
+                                      <span className={`inline-flex rounded-full px-2 py-0.5 text-xs font-semibold ${
+                                        payment.status === "paid"
+                                          ? "bg-green-100 text-green-800"
+                                          : payment.status === "partial"
+                                          ? "bg-amber-100 text-amber-800"
+                                          : "bg-rose-100 text-rose-800"
+                                      }`}>
+                                        {payment.status || "pending"}
+                                      </span>
+                                    </td>
+                                  </tr>
+                                ))}
+                              </tbody>
+                            </table>
+                </div>
+                </div>
+                      )}
+                </div>
+                  ) : (
+                    <div className="flex flex-col items-center justify-center py-8 text-center">
+                      <p className="text-sm text-slate-600">No billing information available</p>
               </div>
-            </div>
-          )}
+                  )}
+              </div>
+          </div>
+        </div>
+      )}
             </>
           )}
         </main>
       </div>
-
-      {/* Add Visit Modal */}
-      {showVisitModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4 overflow-y-auto">
-          <div className="w-full max-w-2xl rounded-xl border border-slate-200 bg-white shadow-xl my-auto max-h-[90vh] overflow-y-auto">
-            <div className="border-b border-slate-200 px-4 py-3 sm:px-6 sm:py-4 sticky top-0 bg-white">
-              <h2 className="text-base font-semibold text-slate-900 sm:text-lg">
-                Add New Visit
-              </h2>
-            </div>
-            <form onSubmit={handleAddVisit} className="px-4 py-4 sm:px-6">
-              <div className="space-y-4">
-                <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-                  <div>
-                    <label className="block text-sm font-medium text-slate-700">
-                      Visit Date *
-                    </label>
-                    <input
-                      type="date"
-                      required
-                      value={visitForm.visitDate}
-                      onChange={(e) =>
-                        setVisitForm({ ...visitForm, visitDate: e.target.value })
-                      }
-                      className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:border-indigo-500 focus:outline-none focus:ring-2 focus:ring-indigo-200"
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-sm font-medium text-slate-700">
-                      Visit Type *
-                    </label>
-                    <select
-                      required
-                      value={visitForm.visitType}
-                      onChange={(e) =>
-                        setVisitForm({ ...visitForm, visitType: e.target.value })
-                      }
-                      className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:border-indigo-500 focus:outline-none focus:ring-2 focus:ring-indigo-200"
-                    >
-                      <option value="Consultation">Consultation</option>
-                      <option value="Follow-up">Follow-up</option>
-                      <option value="Emergency">Emergency</option>
-                      <option value="Check-up">Check-up</option>
-                      <option value="Other">Other</option>
-                    </select>
-                  </div>
-                </div>
-                <div className="relative">
-                  <label className="block text-sm font-medium text-slate-700">
-                    Doctor Name
-                  </label>
-                  <input
-                    ref={doctorInputRef}
-                    type="text"
-                    value={visitForm.doctorName}
-                    onChange={(e) => {
-                      const value = e.target.value;
-                      setVisitForm({ ...visitForm, doctorName: value });
-                      if (value) {
-                        const filtered = doctors.filter(doctor =>
-                          doctor.name.toLowerCase().includes(value.toLowerCase())
-                        );
-                        setDoctorSuggestions(filtered);
-                        setShowDoctorDropdown(true);
-                      } else {
-                        setDoctorSuggestions(doctors);
-                        setShowDoctorDropdown(true);
-                      }
-                    }}
-                    onFocus={() => {
-                      if (visitForm.doctorName) {
-                        const filtered = doctors.filter(doctor =>
-                          doctor.name.toLowerCase().includes(visitForm.doctorName.toLowerCase())
-                        );
-                        setDoctorSuggestions(filtered);
-                      } else {
-                        setDoctorSuggestions(doctors);
-                      }
-                      setShowDoctorDropdown(true);
-                    }}
-                    className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:border-indigo-500 focus:outline-none focus:ring-2 focus:ring-indigo-200"
-                    placeholder="Search doctor..."
-                  />
-                  {showDoctorDropdown && doctorSuggestions.length > 0 && (
-                    <div
-                      ref={doctorDropdownRef}
-                      className="absolute z-[100] mt-1 max-h-60 w-full overflow-auto rounded-lg border border-slate-200 bg-white shadow-lg"
-                    >
-                      {doctorSuggestions.map((doctor) => (
-                        <button
-                          key={doctor._id}
-                          type="button"
-                          onClick={() => {
-                            setVisitForm({ ...visitForm, doctorName: doctor.name });
-                            setShowDoctorDropdown(false);
-                          }}
-                          className="w-full px-4 py-2 text-left text-sm text-slate-700 hover:bg-indigo-50 transition-colors"
-                        >
-                          {doctor.name}
-                        </button>
-                      ))}
-                    </div>
-                  )}
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-slate-700">
-                    Chief Complaint
-                  </label>
-                  <textarea
-                    value={visitForm.chiefComplaint}
-                    onChange={(e) =>
-                      setVisitForm({ ...visitForm, chiefComplaint: e.target.value })
-                    }
-                    rows={2}
-                    className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:border-indigo-500 focus:outline-none focus:ring-2 focus:ring-indigo-200"
-                    placeholder="Patient's main complaint..."
-                  />
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-slate-700">
-                    Diagnosis
-                  </label>
-                  <textarea
-                    value={visitForm.diagnosis}
-                    onChange={(e) =>
-                      setVisitForm({ ...visitForm, diagnosis: e.target.value })
-                    }
-                    rows={2}
-                    className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:border-indigo-500 focus:outline-none focus:ring-2 focus:ring-indigo-200"
-                    placeholder="Diagnosis..."
-                  />
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-slate-700">
-                    Treatment
-                  </label>
-                  <textarea
-                    value={visitForm.treatment}
-                    onChange={(e) =>
-                      setVisitForm({ ...visitForm, treatment: e.target.value })
-                    }
-                    rows={2}
-                    className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:border-indigo-500 focus:outline-none focus:ring-2 focus:ring-indigo-200"
-                    placeholder="Treatment prescribed..."
-                  />
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-slate-700">
-                    Notes
-                  </label>
-                  <textarea
-                    value={visitForm.notes}
-                    onChange={(e) =>
-                      setVisitForm({ ...visitForm, notes: e.target.value })
-                    }
-                    rows={3}
-                    className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:border-indigo-500 focus:outline-none focus:ring-2 focus:ring-indigo-200"
-                    placeholder="Additional notes..."
-                  />
-                </div>
-              </div>
-              <div className="mt-6 flex flex-col-reverse gap-2 border-t border-slate-200 pt-4 sm:flex-row sm:items-center sm:justify-end sm:gap-3">
-                <button
-                  type="button"
-                  onClick={() => {
-                    setShowVisitModal(false);
-                    setVisitForm({
-                      visitDate: new Date().toISOString().split('T')[0],
-                      visitType: "Consultation",
-                      chiefComplaint: "",
-                      diagnosis: "",
-                      treatment: "",
-                      notes: "",
-                      doctorName: "",
-                    });
-                  }}
-                  className="w-full rounded-lg border border-slate-300 bg-white px-4 py-2 text-sm font-medium text-slate-700 transition hover:bg-slate-50 sm:w-auto"
-                >
-                  Cancel
-                </button>
-                <button
-                  type="submit"
-                  className="w-full rounded-lg bg-indigo-700 px-4 py-2 text-sm font-semibold text-white transition hover:bg-indigo-800 sm:w-auto"
-                >
-                  Add Visit
-                </button>
-              </div>
-            </form>
-          </div>
-        </div>
-      )}
 
       {/* Delete Confirmation Modal */}
       {showDeleteModal && (
@@ -3463,6 +3694,220 @@ function PatientDetails() {
         </div>
       )}
 
+      {/* Remarks Modal */}
+      {showRemarksModal && selectedVisitForRemarks && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4 overflow-y-auto">
+          <div className="w-full max-w-2xl rounded-xl border border-slate-200 bg-white shadow-xl my-auto max-h-[90vh] overflow-y-auto">
+            <div className="border-b border-slate-200 px-4 py-3 sm:px-6 sm:py-4 sticky top-0 bg-white">
+              <h2 className="text-base font-semibold text-slate-900 sm:text-lg">
+                Add Remarks - {selectedVisitForRemarks.opdNumber}
+              </h2>
+              <p className="mt-0.5 text-xs text-slate-600 sm:text-sm">
+                {new Date(selectedVisitForRemarks.visitDate).toLocaleDateString()}
+              </p>
+            </div>
+            <div className="px-4 py-4 sm:px-6 sm:py-6">
+              <div className="space-y-4">
+                {hasPermission(PERMISSIONS.PATIENTS_EDIT) && (
+                <div>
+                  <label className="block text-sm font-medium text-slate-700 mb-2">
+                      General Remarks
+                  </label>
+                    <textarea
+                      value={remarksForm.remarks}
+                    onChange={(e) =>
+                        setRemarksForm({ ...remarksForm, remarks: e.target.value })
+                    }
+                      rows={4}
+                    className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:border-indigo-500 focus:outline-none focus:ring-2 focus:ring-indigo-200"
+                      placeholder="Enter general remarks..."
+                    />
+                </div>
+                )}
+                {(isReceptionist() || hasPermission(PERMISSIONS.PATIENTS_EDIT)) && (
+                <div>
+                  <label className="block text-sm font-medium text-slate-700 mb-2">
+                      Reception Remarks
+                  </label>
+                  <textarea
+                      value={remarksForm.receptionRemarks}
+                    onChange={(e) =>
+                        setRemarksForm({ ...remarksForm, receptionRemarks: e.target.value })
+                    }
+                      rows={4}
+                    className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:border-indigo-500 focus:outline-none focus:ring-2 focus:ring-indigo-200"
+                      placeholder="Enter reception remarks..."
+                  />
+                </div>
+                )}
+                {(isDoctor() || hasPermission(PERMISSIONS.PATIENTS_EDIT)) && (
+                  <div>
+                    <label className="block text-sm font-medium text-slate-700 mb-2">
+                      Doctor Remarks
+                    </label>
+                    <textarea
+                      value={remarksForm.doctorRemarks}
+                      onChange={(e) =>
+                        setRemarksForm({ ...remarksForm, doctorRemarks: e.target.value })
+                      }
+                      rows={4}
+                      className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:border-indigo-500 focus:outline-none focus:ring-2 focus:ring-indigo-200"
+                      placeholder="Enter doctor remarks..."
+                    />
+              </div>
+                )}
+              </div>
+              <div className="mt-6 flex flex-col-reverse gap-2 border-t border-slate-200 pt-4 sm:flex-row sm:items-center sm:justify-end sm:gap-3">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setShowRemarksModal(false);
+                    setSelectedVisitForRemarks(null);
+                    setRemarksForm({ receptionRemarks: "", doctorRemarks: "", remarks: "" });
+                  }}
+                  className="w-full rounded-lg border border-slate-300 bg-white px-4 py-2 text-sm font-medium text-slate-700 transition hover:bg-slate-50 sm:w-auto"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  onClick={handleSaveRemarks}
+                  className="w-full rounded-lg bg-indigo-700 px-4 py-2 text-sm font-semibold text-white transition hover:bg-indigo-800 sm:w-auto"
+                >
+                  Save Remarks
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Payment Processing Modal */}
+      {showPaymentModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4 overflow-y-auto">
+          <div className="w-full max-w-2xl rounded-xl border border-slate-200 bg-white shadow-xl my-auto max-h-[90vh] overflow-y-auto">
+            <div className="border-b border-slate-200 px-4 py-3 sm:px-6 sm:py-4 sticky top-0 bg-white">
+              <h2 className="text-base font-semibold text-slate-900 sm:text-lg">
+                Process Payment
+              </h2>
+              <p className="mt-0.5 text-xs text-slate-600 sm:text-sm">
+                {selectedBills.size} bill(s) selected
+              </p>
+            </div>
+            <div className="px-4 py-4 sm:px-6 sm:py-6">
+              <div className="space-y-4">
+                {/* Selected Bills Summary */}
+                <div className="rounded-lg border border-slate-200 bg-slate-50/50 p-4">
+                  <h3 className="text-sm font-semibold text-slate-900 mb-2">Selected Bills</h3>
+                  <div className="space-y-1 max-h-32 overflow-y-auto">
+                    {Array.from(selectedBills).map((billId) => {
+                      const allBills = [
+                        ...(billingInfo?.opdRecords || []).map((opd: any) => ({ ...opd, type: "OPD" as const })),
+                        ...(billingInfo?.ipdRecords || []).map((ipd: any) => ({ ...ipd, type: "IPD" as const })),
+                      ];
+                      const bill = allBills.find((b: any) => b._id === billId);
+                      if (!bill) return null;
+                      return (
+                        <div key={billId} className="flex items-center justify-between text-xs">
+                          <span className="text-slate-700">
+                            {bill.type === "OPD" ? bill.opdNumber : bill.ipdNumber} ({bill.type})
+                          </span>
+                          <span className="font-medium text-slate-900">
+                            ₹{bill.pendingAmount?.toLocaleString() || 0}
+                          </span>
+                        </div>
+                      );
+                    })}
+                  </div>
+                  <div className="mt-3 pt-3 border-t border-slate-200 flex items-center justify-between">
+                    <span className="text-sm font-semibold text-slate-900">Total Amount:</span>
+                    <span className="text-lg font-bold text-indigo-600">₹{calculateSelectedTotal().toLocaleString()}</span>
+                  </div>
+                </div>
+
+                {/* Payment Method */}
+                <div>
+                  <label className="block text-sm font-medium text-slate-700 mb-2">
+                    Payment Method *
+                  </label>
+                  <select
+                    value={paymentForm.paymentMethod}
+                    onChange={(e) => setPaymentForm({ ...paymentForm, paymentMethod: e.target.value })}
+                    className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:border-indigo-500 focus:outline-none focus:ring-2 focus:ring-indigo-200"
+                  >
+                    <option value="cash">Cash</option>
+                    <option value="card">Card</option>
+                    <option value="upi">UPI</option>
+                    <option value="cheque">Cheque</option>
+                    <option value="other">Other</option>
+                  </select>
+                </div>
+
+                {/* Payment Date */}
+                <div>
+                  <label className="block text-sm font-medium text-slate-700 mb-2">
+                    Payment Date *
+                  </label>
+                  <input
+                    type="date"
+                    value={paymentForm.paymentDate}
+                    onChange={(e) => setPaymentForm({ ...paymentForm, paymentDate: e.target.value })}
+                    className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:border-indigo-500 focus:outline-none focus:ring-2 focus:ring-indigo-200"
+                  />
+                </div>
+
+                {/* Notes */}
+                <div>
+                  <label className="block text-sm font-medium text-slate-700 mb-2">
+                    Notes (Optional)
+                  </label>
+                  <textarea
+                    value={paymentForm.notes}
+                    onChange={(e) => setPaymentForm({ ...paymentForm, notes: e.target.value })}
+                    rows={3}
+                    className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:border-indigo-500 focus:outline-none focus:ring-2 focus:ring-indigo-200"
+                    placeholder="Add any notes about this payment..."
+                  />
+                </div>
+              </div>
+
+              <div className="mt-6 flex flex-col-reverse gap-2 border-t border-slate-200 pt-4 sm:flex-row sm:items-center sm:justify-end sm:gap-3">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setShowPaymentModal(false);
+                    setPaymentForm({
+                      paymentMethod: "cash",
+                      paymentDate: new Date().toISOString().split('T')[0],
+                      notes: "",
+                    });
+                  }}
+                  disabled={processingPayment}
+                  className="w-full rounded-lg border border-slate-300 bg-white px-4 py-2 text-sm font-medium text-slate-700 transition hover:bg-slate-50 disabled:opacity-50 sm:w-auto"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  onClick={handleProcessPayment}
+                  disabled={processingPayment || selectedBills.size === 0}
+                  className="w-full rounded-lg bg-indigo-700 px-4 py-2 text-sm font-semibold text-white transition hover:bg-indigo-800 disabled:cursor-not-allowed disabled:opacity-50 sm:w-auto"
+                >
+                  {processingPayment ? (
+                    <span className="flex items-center gap-2">
+                      <div className="h-4 w-4 animate-spin rounded-full border-2 border-white border-r-transparent"></div>
+                      Processing...
+                    </span>
+                  ) : (
+                    `Process Payment (₹${calculateSelectedTotal().toLocaleString()})`
+                  )}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Update Status Modal */}
       {showStatusModal && patient && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
@@ -3486,9 +3931,9 @@ function PatientDetails() {
                     value={statusFormData.status}
                     onChange={(e) =>
                       setStatusFormData({ ...statusFormData, status: e.target.value })
-                    }
-                    className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:border-indigo-500 focus:outline-none focus:ring-2 focus:ring-indigo-200"
-                  >
+                      }
+                      className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:border-indigo-500 focus:outline-none focus:ring-2 focus:ring-indigo-200"
+                    >
                     <option value="active">Active</option>
                     <option value="inactive">Inactive</option>
                     <option value="discharged">Discharged</option>
@@ -3497,21 +3942,21 @@ function PatientDetails() {
                     <option value="absconded">Absconded</option>
                     <option value="on-leave">On Leave</option>
                     <option value="follow-up">Follow-up</option>
-                  </select>
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-slate-700 mb-2">
+                    </select>
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-slate-700 mb-2">
                     Status Notes
-                  </label>
+                    </label>
                   <textarea
                     value={statusFormData.statusNotes}
-                    onChange={(e) =>
+                          onChange={(e) =>
                       setStatusFormData({ ...statusFormData, statusNotes: e.target.value })
-                    }
+                          }
                     rows={3}
                     className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:border-indigo-500 focus:outline-none focus:ring-2 focus:ring-indigo-200"
                     placeholder="Optional notes about the status change..."
-                  />
+                        />
                 </div>
               </div>
               <div className="mt-6 flex gap-3">
@@ -3537,92 +3982,6 @@ function PatientDetails() {
         </div>
       )}
 
-      {/* Add Remark Modal */}
-      {showRemarkModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4 overflow-y-auto">
-          <div className="w-full max-w-2xl rounded-xl border border-slate-200 bg-white shadow-xl my-auto max-h-[90vh] overflow-y-auto">
-            <div className="border-b border-slate-200 px-4 py-3 sm:px-6 sm:py-4 sticky top-0 bg-white">
-              <h2 className="text-base font-semibold text-slate-900 sm:text-lg">
-                Add New Remark
-              </h2>
-            </div>
-            <form onSubmit={handleAddRemark} className="px-4 py-4 sm:px-6">
-              <div className="space-y-4">
-                <div>
-                  <label className="block text-sm font-medium text-slate-700 mb-2">
-                    Remark *
-                  </label>
-                  <textarea
-                    required
-                    value={remarkForm.remark}
-                    onChange={(e) =>
-                      setRemarkForm({ ...remarkForm, remark: e.target.value })
-                    }
-                    rows={5}
-                    className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:border-indigo-500 focus:outline-none focus:ring-2 focus:ring-indigo-200"
-                    placeholder="Enter your remark or note..."
-                  />
-                </div>
-                <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-                  <div>
-                    <label className="block text-sm font-medium text-slate-700 mb-2">
-                      Remark Type
-                    </label>
-                    <select
-                      value={remarkForm.remarkType}
-                      onChange={(e) =>
-                        setRemarkForm({ ...remarkForm, remarkType: e.target.value })
-                      }
-                      className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:border-indigo-500 focus:outline-none focus:ring-2 focus:ring-indigo-200"
-                    >
-                      <option value="general">General</option>
-                      <option value="medical">Medical</option>
-                      <option value="administrative">Administrative</option>
-                      <option value="other">Other</option>
-                    </select>
-                  </div>
-                  <div>
-                    <label className="block text-sm font-medium text-slate-700 mb-2">
-                      Private Remark
-                    </label>
-                    <div className="mt-2">
-                      <label className="flex items-center">
-                        <input
-                          type="checkbox"
-                          checked={remarkForm.isPrivate}
-                          onChange={(e) =>
-                            setRemarkForm({ ...remarkForm, isPrivate: e.target.checked })
-                          }
-                          className="rounded border-slate-300 text-indigo-600 focus:ring-indigo-500"
-                        />
-                        <span className="ml-2 text-sm text-slate-700">Make this remark private</span>
-                      </label>
-                    </div>
-                  </div>
-                </div>
-              </div>
-              <div className="mt-6 flex gap-3">
-                <button
-                  type="button"
-                  onClick={() => {
-                    setShowRemarkModal(false);
-                    setRemarkForm({ remark: "", remarkType: "general", allowedRoles: ["doctor", "nurse"], isPrivate: false });
-                  }}
-                  className="flex-1 rounded-lg border border-slate-300 bg-white px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50"
-                >
-                  Cancel
-                </button>
-                <button
-                  type="submit"
-                  className="flex-1 rounded-lg bg-indigo-600 px-4 py-2 text-sm font-medium text-white hover:bg-indigo-700"
-                >
-                  Add Remark
-                </button>
-              </div>
-            </form>
-          </div>
-        </div>
-      )}
     </div>
   );
 }

@@ -292,6 +292,9 @@ function DoctorSchedules() {
                 </option>
               ))}
             </select>
+            {selectedDoctor && loading ? (
+              <div className="mt-3 text-xs font-medium text-slate-600">Loading schedule…</div>
+            ) : null}
           </div>
 
           {selectedDoctor && schedule && (

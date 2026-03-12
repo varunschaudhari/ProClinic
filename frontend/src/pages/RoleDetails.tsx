@@ -31,7 +31,6 @@ function RoleDetails() {
   const navigate = useNavigate();
   const { id } = useParams<{ id: string }>();
   const [role, setRole] = useState<Role | null>(null);
-  const [permissions, setPermissions] = useState<string[]>([]);
   const [permissionsByModule, setPermissionsByModule] = useState<PermissionGroup>({});
   const [loading, setLoading] = useState(true);
   const [isEditing, setIsEditing] = useState(false);
@@ -93,7 +92,6 @@ function RoleDetails() {
     try {
       const response = await rolesAPI.getPermissions();
       if (response.success) {
-        setPermissions(response.data.permissions);
         setPermissionsByModule(response.data.permissionsByModule);
       }
     } catch (err) {

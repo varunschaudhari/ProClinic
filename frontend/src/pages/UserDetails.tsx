@@ -101,7 +101,7 @@ function UserDetails() {
           email: userData.email,
           password: "",
           role: userData.role,
-          roles: userData.roles?.map((r) => r._id) || [],
+          roles: userData.roles?.map((r: any) => r._id) || [],
           profileImage: null,
           dateOfBirth: userData.dateOfBirth ? new Date(userData.dateOfBirth).toISOString().split('T')[0] : "",
           yearsOfExperience: userData.yearsOfExperience?.toString() || "",
@@ -765,7 +765,7 @@ function UserDetails() {
               </h2>
               <p className="mt-2 text-xs text-slate-600 sm:text-sm">
                 Are you sure you want to delete{" "}
-                <span className="font-medium">{user.name}</span>? This action
+                <span className="font-medium">{user?.name || "this user"}</span>? This action
                 cannot be undone.
               </p>
             </div>

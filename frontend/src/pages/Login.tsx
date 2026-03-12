@@ -91,9 +91,20 @@ function Login() {
 
         showSuccess("Login successful. Redirecting to clinic dashboard...");
         
-        // Redirect to dashboard using React Router
+        // Redirect to appropriate dashboard based on role
+        // Check both role field and roles array
+        const userRole = data.data.user.role?.toLowerCase();
+        const hasSimpleDoctorRole = userRole === "doctor";
+        const hasDoctorInRoles = data.data.user.roles?.some((role: any) => {
+          const roleName = typeof role === "string" ? role : role?.name;
+          return roleName?.toLowerCase().includes("doctor");
+        }) || false;
+        const isDoctor = hasSimpleDoctorRole || hasDoctorInRoles;
+        
+        const dashboardPath = isDoctor ? "/doctor/dashboard" : "/dashboard";
+        
         setTimeout(() => {
-          navigate("/dashboard");
+          navigate(dashboardPath);
         }, 1000);
       } else {
         showError(data.message || "Login failed. Please check your credentials.");

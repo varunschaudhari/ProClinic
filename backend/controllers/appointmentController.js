@@ -3,6 +3,7 @@ import Patient from "../models/Patient.js";
 import DoctorSchedule from "../models/DoctorSchedule.js";
 import Holiday from "../models/Holiday.js";
 import OPD from "../models/OPD.js";
+import Visit from "../models/Visit.js";
 import { logInfo, logError } from "../config/logger.js";
 
 // @desc    Get all appointments
@@ -10,7 +11,7 @@ import { logInfo, logError } from "../config/logger.js";
 // @access  Private
 export const getAppointments = async (req, res) => {
   try {
-    const { doctorId, patientId, date, status, priority, appointmentType, startDate, endDate, search } = req.query;
+    const { doctorId, patientId, date, status, priority, appointmentType, startDate, endDate, search, isFollowUp } = req.query;
     const query = {};
 
     if (doctorId) query.doctorId = doctorId;
@@ -18,6 +19,7 @@ export const getAppointments = async (req, res) => {
     if (status) query.status = status;
     if (priority) query.priority = priority;
     if (appointmentType) query.appointmentType = appointmentType;
+    if (isFollowUp === "true") query.isFollowUp = true;
     
     // Date range filter
     if (startDate && endDate) {
@@ -34,10 +36,22 @@ export const getAppointments = async (req, res) => {
       query.appointmentDate = { $gte: startDate, $lte: endDate };
     }
 
-    // Search filter
+    // Search filter - search by appointment number, patient name, or patient phone
     if (search) {
+      // First, find patients matching the search query
+      const patientMatches = await Patient.find({
+        $or: [
+          { name: { $regex: search, $options: "i" } },
+          { phone: { $regex: search, $options: "i" } },
+          { patientId: { $regex: search, $options: "i" } },
+        ],
+      }).select("_id");
+      
+      const patientIds = patientMatches.map(p => p._id);
+      
       query.$or = [
         { appointmentNumber: { $regex: search, $options: "i" } },
+        ...(patientIds.length > 0 ? [{ patientId: { $in: patientIds } }] : []),
       ];
     }
 
@@ -51,6 +65,7 @@ export const getAppointments = async (req, res) => {
       .populate("convertedBy", "name email")
       .populate("followUpAppointmentId", "appointmentNumber appointmentDate appointmentTime")
       .populate("originalAppointmentId", "appointmentNumber appointmentDate appointmentTime")
+      .populate("visitId", "visitDate visitType diagnosis treatment")
       .populate("history.changedBy", "name email")
       .sort({ appointmentDate: 1, appointmentTime: 1 });
 
@@ -163,9 +178,11 @@ export const getAppointmentStats = async (req, res) => {
 export const getAppointment = async (req, res) => {
   try {
     const appointment = await Appointment.findById(req.params.id)
-      .populate("patientId")
+      .populate("patientId", "name phone patientId email")
       .populate("doctorId", "name email")
-      .populate("createdBy", "name email");
+      .populate("createdBy", "name email")
+      .populate("originalAppointmentId", "appointmentNumber appointmentDate appointmentTime")
+      .populate("visitId", "visitDate visitType diagnosis treatment");
 
     if (!appointment) {
       return res.status(404).json({
@@ -349,6 +366,8 @@ export const createAppointment = async (req, res) => {
       appointmentType,
       chiefComplaint,
       notes,
+      isFollowUp,
+      originalAppointmentId,
     } = req.body;
 
     // Validate required fields
@@ -389,6 +408,23 @@ export const createAppointment = async (req, res) => {
       });
     }
 
+    // If this is a follow-up, validate original appointment exists
+    if (isFollowUp && originalAppointmentId) {
+      const originalAppointment = await Appointment.findById(originalAppointmentId);
+      if (!originalAppointment) {
+        return res.status(404).json({
+          success: false,
+          message: "Original appointment not found",
+        });
+      }
+      if (originalAppointment.patientId.toString() !== patientId) {
+        return res.status(400).json({
+          success: false,
+          message: "Follow-up appointment must be for the same patient",
+        });
+      }
+    }
+
     const appointment = await Appointment.create({
       patientId,
       doctorId,
@@ -400,6 +436,8 @@ export const createAppointment = async (req, res) => {
       chiefComplaint: chiefComplaint || null,
       notes: notes || null,
       reminderEnabled: req.body.reminderEnabled !== undefined ? req.body.reminderEnabled : true,
+      isFollowUp: isFollowUp || false,
+      originalAppointmentId: isFollowUp && originalAppointmentId ? originalAppointmentId : null,
       createdBy: req.user.id,
     });
 
@@ -415,6 +453,8 @@ export const createAppointment = async (req, res) => {
       .populate("patientId", "name phone patientId email")
       .populate("doctorId", "name email")
       .populate("createdBy", "name email")
+      .populate("originalAppointmentId", "appointmentNumber appointmentDate appointmentTime")
+      .populate("visitId", "visitDate visitType diagnosis treatment")
       .populate("history.changedBy", "name email");
 
     logInfo("Appointment created", {
@@ -453,6 +493,7 @@ export const createAppointment = async (req, res) => {
 export const updateAppointment = async (req, res) => {
   try {
     const {
+      doctorId,
       appointmentDate,
       appointmentTime,
       appointmentType,
@@ -479,10 +520,12 @@ export const updateAppointment = async (req, res) => {
       appointmentTime: appointment.appointmentTime,
       status: appointment.status,
       priority: appointment.priority,
+      doctorId: appointment.doctorId,
     };
 
-    // Check slot availability if date/time is being changed
-    if (appointmentDate || appointmentTime) {
+    // Check slot availability if date/time or doctor is being changed
+    const newDoctorId = doctorId || appointment.doctorId;
+    if (appointmentDate || appointmentTime || doctorId) {
       const newDate = appointmentDate ? new Date(appointmentDate) : appointment.appointmentDate;
       const newTime = appointmentTime || appointment.appointmentTime;
 
@@ -492,7 +535,7 @@ export const updateAppointment = async (req, res) => {
       endDate.setHours(23, 59, 59, 999);
 
       const existingAppointment = await Appointment.findOne({
-        doctorId: appointment.doctorId,
+        doctorId: newDoctorId,
         appointmentDate: { $gte: startDate, $lte: endDate },
         appointmentTime: newTime,
         status: { $ne: "cancelled" },
@@ -502,12 +545,16 @@ export const updateAppointment = async (req, res) => {
       if (existingAppointment) {
         return res.status(400).json({
           success: false,
-          message: "This time slot is already booked",
+          message: "This time slot is already booked for the selected doctor",
         });
       }
     }
 
+    // Check if status is being changed to completed
+    const isBeingCompleted = status === "completed" && appointment.status !== "completed";
+    
     // Update fields
+    if (doctorId) appointment.doctorId = doctorId;
     if (appointmentDate) appointment.appointmentDate = new Date(appointmentDate);
     if (appointmentTime) appointment.appointmentTime = appointmentTime;
     if (appointmentType) appointment.appointmentType = appointmentType;
@@ -519,12 +566,80 @@ export const updateAppointment = async (req, res) => {
     if (reminderEnabled !== undefined) appointment.reminderEnabled = reminderEnabled;
     appointment.updatedBy = req.user.id;
 
+    // Create Visit record when appointment is completed
+    if (isBeingCompleted && !appointment.visitId) {
+      let previousVisitId = null;
+      
+      // If this is a follow-up appointment, find the previous visit
+      if (appointment.isFollowUp && appointment.originalAppointmentId) {
+        // Get the immediate previous appointment (the one this follow-up is based on)
+        const previousAppointment = await Appointment.findById(appointment.originalAppointmentId)
+          .populate("visitId");
+        
+        if (previousAppointment && previousAppointment.visitId) {
+          // Use the visit from the immediate previous appointment
+          previousVisitId = previousAppointment.visitId._id || previousAppointment.visitId;
+        } else {
+          // If previous appointment doesn't have a visit yet, try to find the most recent visit in the chain
+          // This handles cases where appointments might be completed out of order
+          let currentAppointmentId = appointment.originalAppointmentId;
+          let foundVisitId = null;
+          
+          // Traverse backwards through the appointment chain to find the most recent visit
+          while (currentAppointmentId && !foundVisitId) {
+            const currentAppointment = await Appointment.findById(currentAppointmentId)
+              .populate("visitId");
+            
+            if (currentAppointment && currentAppointment.visitId) {
+              foundVisitId = currentAppointment.visitId._id || currentAppointment.visitId;
+              break;
+            }
+            
+            // Move to the next previous appointment in the chain
+            if (currentAppointment && currentAppointment.originalAppointmentId) {
+              currentAppointmentId = currentAppointment.originalAppointmentId;
+            } else {
+              break;
+            }
+          }
+          
+          previousVisitId = foundVisitId;
+        }
+      }
+
+      // Create Visit record
+      const visit = await Visit.create({
+        patientId: appointment.patientId,
+        appointmentId: appointment._id,
+        previousVisitId: previousVisitId,
+        visitDate: appointment.appointmentDate,
+        visitType: appointment.isFollowUp ? "Follow-up" : "Consultation",
+        chiefComplaint: appointment.chiefComplaint || null,
+        diagnosis: null, // Can be filled later
+        treatment: null, // Can be filled later
+        notes: appointment.notes || null,
+        doctorId: appointment.doctorId,
+        doctorName: null, // Will be populated from doctorId
+        createdBy: req.user.id,
+      });
+
+      // Update appointment with visitId
+      appointment.visitId = visit._id;
+      
+      logInfo("Visit created from appointment", {
+        appointmentId: appointment._id,
+        visitId: visit._id,
+        isFollowUp: appointment.isFollowUp,
+        previousVisitId: previousVisitId,
+      });
+    }
+
     // Add to history
     appointment.history.push({
-      action: "updated",
+      action: isBeingCompleted ? "completed" : "updated",
       changedBy: req.user.id,
       previousValues,
-      notes: "Appointment updated",
+      notes: isBeingCompleted ? "Appointment completed and visit created" : "Appointment updated",
     });
 
     await appointment.save();
@@ -534,6 +649,8 @@ export const updateAppointment = async (req, res) => {
       .populate("doctorId", "name email")
       .populate("createdBy", "name email")
       .populate("updatedBy", "name email")
+      .populate("originalAppointmentId", "appointmentNumber appointmentDate appointmentTime")
+      .populate("visitId", "visitDate visitType diagnosis treatment")
       .populate("history.changedBy", "name email");
 
     logInfo("Appointment updated", {

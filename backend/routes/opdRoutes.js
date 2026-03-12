@@ -8,6 +8,9 @@ import {
   updateOPDRecord,
   updateOPDStatus,
   processPayment,
+  processRefund,
+  addCreditNote,
+  recordAdvance,
   deleteOPDRecord,
   getOPDStats,
 } from "../controllers/opdController.js";
@@ -45,5 +48,14 @@ router.patch("/:id/status", hasPermission(PERMISSIONS.OPD_EDIT), updateOPDStatus
 
 // Payment processing
 router.patch("/:id/payment", hasPermission(PERMISSIONS.OPD_BILLING), processPayment);
+
+// Refund processing
+router.patch("/:id/refund", hasPermission(PERMISSIONS.OPD_BILLING), processRefund);
+
+// Credit Notes
+router.patch("/:id/credit-note", hasPermission(PERMISSIONS.OPD_BILLING), addCreditNote);
+
+// Billing Advance
+router.patch("/:id/advance", hasPermission(PERMISSIONS.OPD_BILLING), recordAdvance);
 
 export default router;

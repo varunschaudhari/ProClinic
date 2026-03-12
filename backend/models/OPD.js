@@ -58,6 +58,18 @@ const opdSchema = new mongoose.Schema(
       type: String,
       trim: true,
     },
+    receptionRemarks: {
+      type: String,
+      trim: true,
+    },
+    doctorRemarks: {
+      type: String,
+      trim: true,
+    },
+    remarks: {
+      type: String,
+      trim: true,
+    },
     // Billing fields
     consultationFee: {
       type: Number,
@@ -98,6 +110,124 @@ const opdSchema = new mongoose.Schema(
       type: Date,
       default: null,
     },
+    // Billing Documents (OPD Billing Module)
+    billingDocumentType: {
+      type: String,
+      enum: ["cash_memo", "invoice"],
+      default: null,
+    },
+    cashMemoNumber: {
+      type: String,
+      trim: true,
+      default: null,
+    },
+    invoiceNumber: {
+      type: String,
+      trim: true,
+      default: null,
+    },
+    taxation: {
+      type: String,
+      enum: ["Non-Gst", "GST"],
+      default: "Non-Gst",
+    },
+    category: {
+      type: String,
+      trim: true,
+      default: null,
+    },
+    package: {
+      type: String,
+      trim: true,
+      default: null,
+    },
+    account: {
+      type: String,
+      trim: true,
+      default: null,
+    },
+    referenceNo: {
+      type: String,
+      trim: true,
+      default: null,
+    },
+    dueDate: {
+      type: Date,
+      default: null,
+    },
+    serviceLines: [
+      {
+        date: { type: Date, default: Date.now },
+        service: { type: String, trim: true, default: null },
+        description: { type: String, trim: true, default: null },
+        incentive: { type: Number, default: 0, min: 0 },
+        qty: { type: Number, default: 1, min: 1 },
+        amount: { type: Number, default: 0, min: 0 },
+        discount: { type: Number, default: 0, min: 0 },
+        totalAmount: { type: Number, default: 0, min: 0 },
+      },
+    ],
+    advanceAmount: {
+      type: Number,
+      default: 0,
+      min: 0,
+    },
+    advances: [
+      {
+        amount: { type: Number, required: true, min: 0 },
+        method: {
+          type: String,
+          enum: ["cash", "card", "upi", "cheque", "other"],
+          default: "cash",
+        },
+        referenceNo: { type: String, trim: true, default: null },
+        note: { type: String, trim: true, default: null },
+        receivedAt: { type: Date, default: Date.now },
+        receivedBy: { type: mongoose.Schema.Types.ObjectId, ref: "User", default: null },
+      },
+    ],
+    creditNotes: [
+      {
+        amount: { type: Number, required: true, min: 0 },
+        referenceNo: { type: String, trim: true, default: null },
+        note: { type: String, trim: true, default: null },
+        issuedAt: { type: Date, default: Date.now },
+        issuedBy: { type: mongoose.Schema.Types.ObjectId, ref: "User", default: null },
+      },
+    ],
+    refunds: [
+      {
+        amount: {
+          type: Number,
+          required: true,
+          min: 0,
+        },
+        method: {
+          type: String,
+          enum: ["cash", "card", "upi", "cheque", "other"],
+          default: "cash",
+        },
+        referenceNo: {
+          type: String,
+          trim: true,
+          default: null,
+        },
+        note: {
+          type: String,
+          trim: true,
+          default: null,
+        },
+        refundedAt: {
+          type: Date,
+          default: Date.now,
+        },
+        refundedBy: {
+          type: mongoose.Schema.Types.ObjectId,
+          ref: "User",
+          default: null,
+        },
+      },
+    ],
     // Follow-up
     followUpRequired: {
       type: Boolean,
@@ -171,7 +301,10 @@ opdSchema.pre("save", async function (next) {
       this.isModified("discount") ||
       this.isModified("labTests")) {
     const labTestTotal = this.labTests.reduce((sum, test) => sum + (test.testFee || 0), 0);
-    this.totalAmount = this.consultationFee + this.additionalCharges + labTestTotal - this.discount;
+    this.totalAmount = Math.max(
+      0,
+      this.consultationFee + this.additionalCharges + labTestTotal - this.discount
+    );
     
     // Update payment status based on paid amount
     if (this.paidAmount >= this.totalAmount) {

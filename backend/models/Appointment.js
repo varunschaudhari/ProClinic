@@ -135,6 +135,12 @@ const appointmentSchema = new mongoose.Schema(
       ref: "User",
       default: null,
     },
+    // Visit record
+    visitId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "Visit",
+      default: null,
+    },
     // Appointment history/audit trail
     history: [
       {

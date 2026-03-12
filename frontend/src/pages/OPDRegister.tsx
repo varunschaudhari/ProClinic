@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import Sidebar from "../components/Sidebar";
 import { opdAPI, patientsAPI, usersAPI } from "../utils/api";
-import { canAccessRoute, hasPermission, PERMISSIONS } from "../utils/permissions";
+import { canAccessRoute } from "../utils/permissions";
 import { showSuccess, showError } from "../utils/toast";
 
 type Patient = {

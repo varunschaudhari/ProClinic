@@ -3,6 +3,7 @@ import Patient from "../models/Patient.js";
 import Sequence from "../models/Sequence.js";
 import OPD from "../models/OPD.js";
 import IPD from "../models/IPD.js";
+import PatientBillingTransaction from "../models/PatientBillingTransaction.js";
 import OTScheduler from "../models/OTScheduler.js";
 import { logInfo, logError } from "../config/logger.js";
 import fs from "fs";
@@ -213,10 +214,19 @@ export const getPatient = async (req, res) => {
       status: { $in: ["admitted", "under-treatment"] }
     });
     
-    // Convert to plain object and add computed patientType
+    // Get total OPD and IPD visit counts
+    const opdCount = await OPD.countDocuments({ patientId: patient._id });
+    const ipdCount = await IPD.countDocuments({ patientId: patient._id });
+    const totalVisits = opdCount + ipdCount;
+    
+    // Convert to plain object and add computed patientType and visit counts
     const patientObj = patient.toObject ? patient.toObject() : { ...patient };
     patientObj.patientType = activeIPDCount > 0 ? "inpatient" : "outpatient";
     patientObj.isInpatient = activeIPDCount > 0;
+    patientObj.opdCount = opdCount;
+    patientObj.ipdCount = ipdCount;
+    patientObj.totalVisits = totalVisits;
+    patientObj.activeIPDCount = activeIPDCount;
 
     res.status(200).json({
       success: true,
@@ -436,6 +446,9 @@ export const updatePatient = async (req, res) => {
       allergies,
       chronicConditions,
       notes,
+      receptionRemarks,
+      doctorRemarks,
+      tags,
       status,
       statusNotes,
       isActive,
@@ -498,6 +511,8 @@ export const updatePatient = async (req, res) => {
     if (email !== undefined) patient.email = email || null;
     if (medicalHistory !== undefined) patient.medicalHistory = medicalHistory || null;
     if (notes !== undefined) patient.notes = notes || null;
+    if (receptionRemarks !== undefined) patient.receptionRemarks = receptionRemarks || null;
+    if (doctorRemarks !== undefined) patient.doctorRemarks = doctorRemarks || null;
     if (isActive !== undefined) patient.isActive = isActive;
 
     // Handle status update
@@ -847,16 +862,91 @@ export const getOperativeSummary = async (req, res) => {
 export const getBillingInformation = async (req, res) => {
   try {
     const { patientId } = req.params;
+    const { startDate, endDate, type, paymentStatus } = req.query;
+
+    // Build query filters
+    const opdQuery = { patientId };
+    const ipdQuery = { patientId };
+
+    // Date range filter
+    if (startDate || endDate) {
+      if (startDate && endDate) {
+        const start = new Date(startDate);
+        start.setHours(0, 0, 0, 0);
+        const end = new Date(endDate);
+        end.setHours(23, 59, 59, 999);
+        opdQuery.visitDate = { $gte: start, $lte: end };
+        ipdQuery.admissionDate = { $gte: start, $lte: end };
+      } else if (startDate) {
+        const start = new Date(startDate);
+        start.setHours(0, 0, 0, 0);
+        opdQuery.visitDate = { $gte: start };
+        ipdQuery.admissionDate = { $gte: start };
+      } else if (endDate) {
+        const end = new Date(endDate);
+        end.setHours(23, 59, 59, 999);
+        opdQuery.visitDate = { $lte: end };
+        ipdQuery.admissionDate = { $lte: end };
+      }
+    }
+
+    // Payment status filter
+    if (paymentStatus) {
+      opdQuery.paymentStatus = paymentStatus;
+      ipdQuery.paymentStatus = paymentStatus;
+    }
 
     // Get OPD billing records
-    const opdRecords = await OPD.find({ patientId })
-      .select("opdNumber visitDate consultationFee additionalCharges labTests discount totalAmount paidAmount paymentStatus paymentMethod paymentDate")
-      .sort({ visitDate: -1 });
+    let opdRecords = [];
+    if (!type || type === "OPD" || type === "all") {
+      opdRecords = await OPD.find(opdQuery)
+        .select("opdNumber visitDate consultationFee additionalCharges labTests discount totalAmount paidAmount paymentStatus paymentMethod paymentDate status refunds creditNotes advances")
+        .populate("doctorId", "name")
+        .sort({ visitDate: -1 });
+    }
 
     // Get IPD billing records
-    const ipdRecords = await IPD.find({ patientId })
-      .select("ipdNumber admissionDate dischargeDate roomCharges medicationCharges procedureCharges labCharges otherCharges discount totalAmount paidAmount paymentStatus paymentMethod paymentDate")
-      .sort({ admissionDate: -1 });
+    let ipdRecords = [];
+    if (!type || type === "IPD" || type === "all") {
+      ipdRecords = await IPD.find(ipdQuery)
+        .select("ipdNumber admissionDate dischargeDate roomCharges medicationCharges procedureCharges labCharges otherCharges discount totalAmount paidAmount paymentStatus paymentMethod paymentDate status")
+        .populate("doctorId", "name")
+        .populate("roomId", "roomNumber bedNumber")
+        .sort({ admissionDate: -1 });
+    }
+
+    // Patient-level transactions (advance, credit notes)
+    const txQuery = { patientId };
+    if (startDate || endDate) {
+      if (startDate && endDate) {
+        const start = new Date(startDate);
+        start.setHours(0, 0, 0, 0);
+        const end = new Date(endDate);
+        end.setHours(23, 59, 59, 999);
+        txQuery.transactionDate = { $gte: start, $lte: end };
+      } else if (startDate) {
+        const start = new Date(startDate);
+        start.setHours(0, 0, 0, 0);
+        txQuery.transactionDate = { $gte: start };
+      } else if (endDate) {
+        const end = new Date(endDate);
+        end.setHours(23, 59, 59, 999);
+        txQuery.transactionDate = { $lte: end };
+      }
+    }
+
+    const patientTransactions = await PatientBillingTransaction.find(txQuery)
+      .select("transactionType amount method referenceNo note transactionDate createdBy")
+      .populate("createdBy", "name")
+      .sort({ transactionDate: -1 });
+
+    const advanceTotal = patientTransactions
+      .filter((t) => t.transactionType === "advance")
+      .reduce((sum, t) => sum + (t.amount || 0), 0);
+
+    const creditNoteTotal = patientTransactions
+      .filter((t) => t.transactionType === "credit_note")
+      .reduce((sum, t) => sum + (t.amount || 0), 0);
 
     // Calculate OPD totals
     const opdTotal = opdRecords.reduce((sum, opd) => sum + (opd.totalAmount || 0), 0);
@@ -871,7 +961,7 @@ export const getBillingInformation = async (req, res) => {
     // Overall totals
     const grandTotal = opdTotal + ipdTotal;
     const grandPaid = opdPaid + ipdPaid;
-    const grandPending = grandTotal - grandPaid;
+    const grandPending = Math.max(0, grandTotal - creditNoteTotal - (grandPaid + advanceTotal));
 
     // Payment history (combine OPD and IPD payments)
     const paymentHistory = [
@@ -885,6 +975,30 @@ export const getBillingInformation = async (req, res) => {
           method: opd.paymentMethod,
           status: opd.paymentStatus,
         })),
+      ...opdRecords
+        .flatMap((opd) =>
+          (opd.creditNotes || []).map((c) => ({
+            date: c.issuedAt || opd.visitDate,
+            type: "OPD_CREDIT_NOTE",
+            reference: opd.opdNumber,
+            amount: -(c.amount || 0),
+            method: "credit_note",
+            status: "credited",
+          }))
+        )
+        .filter((x) => x.amount !== 0),
+      ...opdRecords
+        .flatMap((opd) =>
+          (opd.refunds || []).map((r) => ({
+            date: r.refundedAt || opd.visitDate,
+            type: "OPD_REFUND",
+            reference: opd.opdNumber,
+            amount: -(r.amount || 0),
+            method: r.method,
+            status: "refunded",
+          }))
+        )
+        .filter((x) => x.amount !== 0),
       ...ipdRecords
         .filter((ipd) => ipd.paidAmount > 0)
         .map((ipd) => ({
@@ -895,6 +1009,15 @@ export const getBillingInformation = async (req, res) => {
           method: ipd.paymentMethod,
           status: ipd.paymentStatus,
         })),
+      ...patientTransactions.map((t) => ({
+        date: t.transactionDate,
+        type: t.transactionType === "advance" ? "ADVANCE" : "CREDIT_NOTE",
+        reference: t.referenceNo || "-",
+        amount: t.transactionType === "advance" ? (t.amount || 0) : -(t.amount || 0),
+        method: t.method || null,
+        status: t.transactionType === "advance" ? "received" : "credited",
+        createdBy: t.createdBy?.name || null,
+      })),
     ].sort((a, b) => new Date(b.date) - new Date(a.date));
 
     // Pending invoices
@@ -945,12 +1068,53 @@ export const getBillingInformation = async (req, res) => {
             total: grandTotal,
             paid: grandPaid,
             pending: grandPending,
+            advanceTotal,
+            creditNoteTotal,
           },
         },
-        opdRecords,
-        ipdRecords,
+        opdRecords: opdRecords.map(opd => ({
+          _id: opd._id,
+          opdNumber: opd.opdNumber,
+          visitDate: opd.visitDate,
+          doctorId: opd.doctorId,
+          consultationFee: opd.consultationFee,
+          additionalCharges: opd.additionalCharges,
+          labTests: opd.labTests,
+          discount: opd.discount,
+          totalAmount: opd.totalAmount,
+          paidAmount: opd.paidAmount,
+          pendingAmount: (opd.totalAmount || 0) - (opd.paidAmount || 0),
+          paymentStatus: opd.paymentStatus,
+          paymentMethod: opd.paymentMethod,
+          paymentDate: opd.paymentDate,
+          status: opd.status,
+          type: "OPD",
+        })),
+        ipdRecords: ipdRecords.map(ipd => ({
+          _id: ipd._id,
+          ipdNumber: ipd.ipdNumber,
+          admissionDate: ipd.admissionDate,
+          dischargeDate: ipd.dischargeDate,
+          doctorId: ipd.doctorId,
+          roomId: ipd.roomId,
+          roomCharges: ipd.roomCharges,
+          medicationCharges: ipd.medicationCharges,
+          procedureCharges: ipd.procedureCharges,
+          labCharges: ipd.labCharges,
+          otherCharges: ipd.otherCharges,
+          discount: ipd.discount,
+          totalAmount: ipd.totalAmount,
+          paidAmount: ipd.paidAmount,
+          pendingAmount: (ipd.totalAmount || 0) - (ipd.paidAmount || 0),
+          paymentStatus: ipd.paymentStatus,
+          paymentMethod: ipd.paymentMethod,
+          paymentDate: ipd.paymentDate,
+          status: ipd.status,
+          type: "IPD",
+        })),
         paymentHistory,
         pendingInvoices,
+        patientTransactions,
       },
     });
   } catch (error) {
@@ -960,6 +1124,280 @@ export const getBillingInformation = async (req, res) => {
     res.status(500).json({
       success: false,
       message: "Error fetching billing information",
+      error: error.message,
+    });
+  }
+};
+
+// @desc    Process payment for multiple bills (OPD/IPD)
+// @route   POST /api/patients/:patientId/process-payment
+// @access  Private
+export const processPayment = async (req, res) => {
+  try {
+    const { patientId } = req.params;
+    const { bills, paymentMethod, paymentDate, notes } = req.body;
+
+    if (!bills || !Array.isArray(bills) || bills.length === 0) {
+      return res.status(400).json({
+        success: false,
+        message: "Please select at least one bill to process payment",
+      });
+    }
+
+    if (!paymentMethod) {
+      return res.status(400).json({
+        success: false,
+        message: "Payment method is required",
+      });
+    }
+
+    const validPaymentMethods = ["cash", "card", "upi", "cheque", "other"];
+    if (!validPaymentMethods.includes(paymentMethod)) {
+      return res.status(400).json({
+        success: false,
+        message: `Invalid payment method. Must be one of: ${validPaymentMethods.join(", ")}`,
+      });
+    }
+
+    const processedBills = [];
+    const errors = [];
+
+    for (const bill of bills) {
+      try {
+        const { type, id, amount } = bill;
+
+        if (!type || !id || !amount || amount <= 0) {
+          errors.push({ bill: id, error: "Invalid bill data" });
+          continue;
+        }
+
+        if (type === "OPD") {
+          const opdRecord = await OPD.findById(id);
+          if (!opdRecord || opdRecord.patientId.toString() !== patientId) {
+            errors.push({ bill: id, error: "OPD record not found or doesn't belong to patient" });
+            continue;
+          }
+
+          const currentPaid = opdRecord.paidAmount || 0;
+          const newPaidAmount = currentPaid + amount;
+          const totalAmount = opdRecord.totalAmount || 0;
+
+          if (newPaidAmount > totalAmount) {
+            errors.push({ bill: id, error: "Payment amount exceeds total amount" });
+            continue;
+          }
+
+          opdRecord.paidAmount = newPaidAmount;
+          opdRecord.paymentMethod = paymentMethod;
+          opdRecord.paymentDate = paymentDate ? new Date(paymentDate) : new Date();
+
+          if (newPaidAmount >= totalAmount) {
+            opdRecord.paymentStatus = "paid";
+          } else if (newPaidAmount > 0) {
+            opdRecord.paymentStatus = "partial";
+          }
+
+          opdRecord.updatedBy = req.user.id;
+          await opdRecord.save();
+
+          processedBills.push({
+            type: "OPD",
+            id: opdRecord._id,
+            reference: opdRecord.opdNumber,
+            amount: amount,
+            totalAmount: totalAmount,
+            paidAmount: newPaidAmount,
+            paymentStatus: opdRecord.paymentStatus,
+          });
+        } else if (type === "IPD") {
+          const ipdRecord = await IPD.findById(id);
+          if (!ipdRecord || ipdRecord.patientId.toString() !== patientId) {
+            errors.push({ bill: id, error: "IPD record not found or doesn't belong to patient" });
+            continue;
+          }
+
+          const currentPaid = ipdRecord.paidAmount || 0;
+          const newPaidAmount = currentPaid + amount;
+          const totalAmount = ipdRecord.totalAmount || 0;
+
+          if (newPaidAmount > totalAmount) {
+            errors.push({ bill: id, error: "Payment amount exceeds total amount" });
+            continue;
+          }
+
+          ipdRecord.paidAmount = newPaidAmount;
+          ipdRecord.paymentMethod = paymentMethod;
+          ipdRecord.paymentDate = paymentDate ? new Date(paymentDate) : new Date();
+
+          if (newPaidAmount >= totalAmount) {
+            ipdRecord.paymentStatus = "paid";
+          } else if (newPaidAmount > 0) {
+            ipdRecord.paymentStatus = "partial";
+          }
+
+          ipdRecord.updatedBy = req.user.id;
+          await ipdRecord.save();
+
+          processedBills.push({
+            type: "IPD",
+            id: ipdRecord._id,
+            reference: ipdRecord.ipdNumber,
+            amount: amount,
+            totalAmount: totalAmount,
+            paidAmount: newPaidAmount,
+            paymentStatus: ipdRecord.paymentStatus,
+          });
+        } else {
+          errors.push({ bill: id, error: "Invalid bill type" });
+        }
+      } catch (error) {
+        errors.push({ bill: bill.id, error: error.message });
+      }
+    }
+
+    if (processedBills.length === 0) {
+      return res.status(400).json({
+        success: false,
+        message: "No bills were processed",
+        errors,
+      });
+    }
+
+    const totalPaid = processedBills.reduce((sum, bill) => sum + bill.amount, 0);
+
+    logInfo("Payment processed", {
+      processedBy: req.user.id,
+      patientId,
+      billsProcessed: processedBills.length,
+      totalAmount: totalPaid,
+      paymentMethod,
+    });
+
+    res.status(200).json({
+      success: true,
+      message: `Payment processed for ${processedBills.length} bill(s)`,
+      data: {
+        processedBills,
+        totalPaid,
+        paymentMethod,
+        paymentDate: paymentDate || new Date(),
+        errors: errors.length > 0 ? errors : undefined,
+      },
+    });
+  } catch (error) {
+    logError("Process payment error", error, {
+      patientId: req.params.patientId,
+      processedBy: req.user?.id,
+    });
+    res.status(500).json({
+      success: false,
+      message: "Error processing payment",
+      error: error.message,
+    });
+  }
+};
+
+// @desc    Add patient-level billing transaction (advance / credit note)
+// @route   POST /api/patients/:patientId/billing/transactions
+// @access  Private
+export const addPatientBillingTransaction = async (req, res) => {
+  try {
+    const { patientId } = req.params;
+    const { transactionType, amount, method, referenceNo, note, transactionDate } = req.body;
+
+    if (!transactionType || !["advance", "credit_note"].includes(transactionType)) {
+      return res.status(400).json({
+        success: false,
+        message: "Please provide a valid transactionType (advance, credit_note)",
+      });
+    }
+
+    const amt = Number(amount);
+    if (!amt || Number.isNaN(amt) || amt <= 0) {
+      return res.status(400).json({
+        success: false,
+        message: "Please provide a valid amount",
+      });
+    }
+
+    const tx = await PatientBillingTransaction.create({
+      patientId,
+      transactionType,
+      amount: amt,
+      method: method || "cash",
+      referenceNo: referenceNo || null,
+      note: note || null,
+      transactionDate: transactionDate ? new Date(transactionDate) : new Date(),
+      createdBy: req.user?.id || null,
+    });
+
+    const populated = await PatientBillingTransaction.findById(tx._id).populate("createdBy", "name");
+
+    res.status(201).json({
+      success: true,
+      message: "Transaction added successfully",
+      data: { transaction: populated },
+    });
+  } catch (error) {
+    logError("Add patient billing transaction error", error, {
+      patientId: req.params.patientId,
+      userId: req.user?.id,
+    });
+    res.status(500).json({
+      success: false,
+      message: "Error adding transaction",
+      error: error.message,
+    });
+  }
+};
+
+// @desc    Get patient-level billing transactions
+// @route   GET /api/patients/:patientId/billing/transactions
+// @access  Private
+export const getPatientBillingTransactions = async (req, res) => {
+  try {
+    const { patientId } = req.params;
+    const { startDate, endDate, transactionType } = req.query;
+
+    const query = { patientId };
+    if (transactionType && ["advance", "credit_note"].includes(transactionType)) {
+      query.transactionType = transactionType;
+    }
+
+    if (startDate || endDate) {
+      if (startDate && endDate) {
+        const start = new Date(startDate);
+        start.setHours(0, 0, 0, 0);
+        const end = new Date(endDate);
+        end.setHours(23, 59, 59, 999);
+        query.transactionDate = { $gte: start, $lte: end };
+      } else if (startDate) {
+        const start = new Date(startDate);
+        start.setHours(0, 0, 0, 0);
+        query.transactionDate = { $gte: start };
+      } else if (endDate) {
+        const end = new Date(endDate);
+        end.setHours(23, 59, 59, 999);
+        query.transactionDate = { $lte: end };
+      }
+    }
+
+    const transactions = await PatientBillingTransaction.find(query)
+      .populate("createdBy", "name")
+      .sort({ transactionDate: -1 });
+
+    res.status(200).json({
+      success: true,
+      data: { transactions, count: transactions.length },
+    });
+  } catch (error) {
+    logError("Get patient billing transactions error", error, {
+      patientId: req.params.patientId,
+      userId: req.user?.id,
+    });
+    res.status(500).json({
+      success: false,
+      message: "Error fetching transactions",
       error: error.message,
     });
   }

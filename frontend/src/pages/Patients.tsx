@@ -709,14 +709,14 @@ function Patients() {
                             </span>
                             {(patient.opdCount || patient.ipdCount) ? (
                               <div className="flex flex-wrap gap-1 text-[10px] text-slate-500">
-                                {patient.opdCount > 0 && (
+                                {(patient.opdCount ?? 0) > 0 && (
                                   <span className="rounded bg-blue-50 px-1 py-0.5 text-blue-700">
-                                    OPD: {patient.opdCount}
+                                    OPD: {patient.opdCount ?? 0}
                                   </span>
                                 )}
-                                {patient.ipdCount > 0 && (
+                                {(patient.ipdCount ?? 0) > 0 && (
                                   <span className="rounded bg-purple-50 px-1 py-0.5 text-purple-700">
-                                    IPD: {patient.ipdCount}
+                                    IPD: {patient.ipdCount ?? 0}
                                   </span>
                                 )}
                               </div>

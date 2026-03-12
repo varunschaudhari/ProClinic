@@ -179,19 +179,6 @@ function IPDDashboard() {
     }
   };
 
-  const getPaymentStatusColor = (status: string) => {
-    switch (status) {
-      case "paid":
-        return "bg-emerald-50 text-emerald-700 border-emerald-200";
-      case "partial":
-        return "bg-yellow-50 text-yellow-700 border-yellow-200";
-      case "pending":
-        return "bg-rose-50 text-rose-700 border-rose-200";
-      default:
-        return "bg-slate-50 text-slate-700 border-slate-200";
-    }
-  };
-
   if (loading) {
     return (
       <div className="flex min-h-screen bg-slate-50">

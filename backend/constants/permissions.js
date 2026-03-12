@@ -2,6 +2,9 @@
 // Format: module.action
 
 export const PERMISSIONS = {
+  // Dashboard module
+  DASHBOARD_VIEW: "dashboard.view",
+
   // Users module
   USERS_VIEW: "users.view",
   USERS_CREATE: "users.create",
@@ -88,6 +91,7 @@ export const PERMISSIONS = {
   PATIENTS_REMARKS_VIEW: "patients.remarks.view",
   PATIENTS_REMARKS_EDIT: "patients.remarks.edit",
   PATIENTS_BILLING_VIEW: "patients.billing.view",
+  PATIENTS_BILLING: "patients.billing",
 };
 
 // Get all permissions as an array

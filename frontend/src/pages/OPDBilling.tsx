@@ -1,74 +1,24 @@
 import { useEffect, useState } from "react";
 import { useNavigate, Link } from "react-router-dom";
 import Sidebar from "../components/Sidebar";
-import { opdAPI, usersAPI } from "../utils/api";
-import { canAccessRoute, hasPermission, PERMISSIONS } from "../utils/permissions";
-import { showSuccess, showError } from "../utils/toast";
-
-type OPDRecord = {
-  _id: string;
-  opdNumber: string;
-  patientId: {
-    _id: string;
-    name: string;
-    patientId: string;
-    phone: string;
-  };
-  doctorId: {
-    _id: string;
-    name: string;
-  };
-  visitDate: string;
-  visitTime?: string;
-  status: string;
-  consultationFee: number;
-  additionalCharges: number;
-  labTests?: Array<{
-    testName: string;
-    testFee: number;
-  }>;
-  discount: number;
-  totalAmount: number;
-  paidAmount: number;
-  paymentStatus: string;
-  paymentMethod?: string;
-  paymentDate?: string;
-};
+import { opdAPI } from "../utils/api";
+import { canAccessRoute } from "../utils/permissions";
+import { showError } from "../utils/toast";
 
 function OPDBilling() {
   const navigate = useNavigate();
-  const [opdRecords, setOpdRecords] = useState<OPDRecord[]>([]);
   const [loading, setLoading] = useState(true);
-  const [doctors, setDoctors] = useState<Array<{ _id: string; name: string }>>([]);
-  const [showPaymentModal, setShowPaymentModal] = useState(false);
-  const [selectedRecord, setSelectedRecord] = useState<OPDRecord | null>(null);
-  const [filters, setFilters] = useState({
-    doctorId: "",
-    paymentStatus: "",
-    status: "",
-    startDate: "",
-    endDate: "",
-  });
-  const [paymentData, setPaymentData] = useState({
-    paidAmount: "",
-    paymentMethod: "cash",
-  });
   const [stats, setStats] = useState({
-    totalRevenue: 0,
-    pendingAmount: 0,
-    paidAmount: 0,
-    totalRecords: 0,
+    cashMemo: 0,
+    invoice: 0,
+    receipt: 0,
+    advance: 0,
   });
 
   useEffect(() => {
     checkAuth();
-    fetchDoctors();
-    fetchOPDRecords();
+    fetchStats();
   }, []);
-
-  useEffect(() => {
-    fetchOPDRecords();
-  }, [filters]);
 
   const checkAuth = () => {
     const token =
@@ -83,130 +33,116 @@ function OPDBilling() {
     }
   };
 
-  const fetchDoctors = async () => {
-    try {
-      const response = await usersAPI.getAll();
-      if (response.success && response.data?.users) {
-        const doctorUsers = response.data.users.filter((user: any) => {
-          if (user.roles && Array.isArray(user.roles)) {
-            return user.roles.some((role: any) =>
-              role.name && role.name.toLowerCase().includes("doctor")
-            );
-          }
-          return user.role && user.role.toLowerCase().includes("doctor");
-        });
-        const doctorList = doctorUsers.map((user: any) => ({
-          _id: user._id,
-          name: user.name,
-        }));
-        setDoctors(doctorList);
-      }
-    } catch (err) {
-      console.error("Error fetching doctors:", err);
-    }
-  };
-
-  const fetchOPDRecords = async () => {
+  const fetchStats = async () => {
     try {
       setLoading(true);
-      const params: any = {};
-      if (filters.doctorId) params.doctorId = filters.doctorId;
-      if (filters.paymentStatus) params.paymentStatus = filters.paymentStatus;
-      if (filters.status) params.status = filters.status;
-      if (filters.startDate) params.startDate = filters.startDate;
-      if (filters.endDate) params.endDate = filters.endDate;
-
-      const response = await opdAPI.getAll(params);
+      // Fetch OPD records to calculate stats
+      const response = await opdAPI.getAll({});
       if (response.success) {
         const records = response.data.opdRecords || [];
-        setOpdRecords(records);
-
+        
         // Calculate statistics
-        const totalRevenue = records.reduce((sum: number, r: OPDRecord) => sum + (r.totalAmount || 0), 0);
-        const paidAmount = records.reduce((sum: number, r: OPDRecord) => sum + (r.paidAmount || 0), 0);
-        const pendingAmount = records.reduce(
-          (sum: number, r: OPDRecord) =>
-            sum + ((r.totalAmount || 0) - (r.paidAmount || 0)),
-          0
-        );
+        // Cash Memo: Records with paymentStatus = "paid" and paymentMethod = "cash"
+        const cashMemo = records.filter(
+          (r: any) => r.paymentStatus === "paid" && r.paymentMethod === "cash"
+        ).length;
+        
+        // Invoice: All records with totalAmount > 0
+        const invoice = records.filter((r: any) => (r.totalAmount || 0) > 0).length;
+        
+        // Receipt: Records with paymentStatus = "paid"
+        const receipt = records.filter((r: any) => r.paymentStatus === "paid").length;
+        
+        // Advance: Records with advance payments (if we have advance field, otherwise 0)
+        const advance = records.filter((r: any) => r.advanceAmount > 0).length;
 
         setStats({
-          totalRevenue,
-          pendingAmount,
-          paidAmount,
-          totalRecords: records.length,
+          cashMemo,
+          invoice,
+          receipt,
+          advance,
         });
       }
     } catch (err) {
-      console.error("Error fetching OPD records:", err);
-      showError("Failed to fetch OPD records");
+      console.error("Error fetching stats:", err);
+      showError("Failed to fetch billing statistics");
     } finally {
       setLoading(false);
     }
   };
 
-  const handleProcessPayment = async () => {
-    if (!selectedRecord) return;
-
-    const paidAmount = parseFloat(paymentData.paidAmount);
-    if (isNaN(paidAmount) || paidAmount <= 0) {
-      showError("Please enter a valid payment amount");
-      return;
-    }
-
-    if (paidAmount > selectedRecord.totalAmount - selectedRecord.paidAmount) {
-      showError("Payment amount cannot exceed the remaining balance");
-      return;
-    }
-
-    try {
-      const newPaidAmount = selectedRecord.paidAmount + paidAmount;
-      const response = await opdAPI.processPayment(selectedRecord._id, {
-        paidAmount: newPaidAmount,
-        paymentMethod: paymentData.paymentMethod,
-      });
-
-      if (response.success) {
-        showSuccess("Payment processed successfully");
-        setShowPaymentModal(false);
-        setSelectedRecord(null);
-        setPaymentData({ paidAmount: "", paymentMethod: "cash" });
-        fetchOPDRecords();
-      } else {
-        showError(response.message || "Failed to process payment");
-      }
-    } catch (err: any) {
-      showError(err.message || "An error occurred");
-    }
-  };
-
-  const getPaymentStatusColor = (status: string) => {
-    switch (status) {
-      case "paid":
-        return "bg-emerald-50 text-emerald-700 border-emerald-200";
-      case "partial":
-        return "bg-amber-50 text-amber-700 border-amber-200";
-      case "pending":
-        return "bg-red-50 text-red-700 border-red-200";
-      default:
-        return "bg-slate-50 text-slate-700 border-slate-200";
-    }
-  };
-
-  const getStatusColor = (status: string) => {
-    switch (status) {
-      case "registered":
-        return "bg-blue-50 text-blue-700 border-blue-200";
-      case "waiting":
-        return "bg-indigo-50 text-indigo-700 border-indigo-200";
-      case "in-progress":
-        return "bg-purple-50 text-purple-700 border-purple-200";
-      case "completed":
-        return "bg-emerald-50 text-emerald-700 border-emerald-200";
-      default:
-        return "bg-slate-50 text-slate-700 border-slate-200";
-    }
-  };
+  const navigationItems = [
+    {
+      name: "Overview",
+      icon: (
+        <svg className="h-8 w-8" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2V6zM14 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2V6zM4 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2v-2zM14 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2v-2z" />
+        </svg>
+      ),
+      path: "/opd/billing/overview",
+      color: "bg-indigo-100 text-indigo-600",
+    },
+    {
+      name: "Cash Memo",
+      icon: (
+        <svg className="h-8 w-8" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+        </svg>
+      ),
+      path: "/opd/billing/cash-memo",
+      color: "bg-green-100 text-green-600",
+    },
+    {
+      name: "Invoice",
+      icon: (
+        <svg className="h-8 w-8" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+        </svg>
+      ),
+      path: "/opd/billing/invoice",
+      color: "bg-orange-100 text-orange-600",
+    },
+    {
+      name: "Receipt",
+      icon: (
+        <svg className="h-8 w-8" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+        </svg>
+      ),
+      path: "/opd/billing/receipt",
+      color: "bg-blue-100 text-blue-600",
+    },
+    {
+      name: "Billing Advance",
+      icon: (
+        <svg className="h-8 w-8" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+        </svg>
+      ),
+      path: "/opd/billing/advance",
+      color: "bg-purple-100 text-purple-600",
+    },
+    {
+      name: "Credit Notes",
+      icon: (
+        <svg className="h-8 w-8" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 10h18M7 15h1m4 0h1m-7 4h12a3 3 0 003-3V8a3 3 0 00-3-3H6a3 3 0 00-3 3v8a3 3 0 003 3z" />
+        </svg>
+      ),
+      path: "/opd/billing/credit-notes",
+      color: "bg-amber-100 text-amber-600",
+    },
+    {
+      name: "Refund",
+      icon: (
+        <svg className="h-8 w-8" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+        </svg>
+      ),
+      path: "/opd/billing/refund",
+      color: "bg-rose-100 text-rose-600",
+    },
+  ];
 
   if (loading) {
     return (
@@ -215,7 +151,7 @@ function OPDBilling() {
         <div className="flex flex-1 items-center justify-center sidebar-content-margin">
           <div className="text-center">
             <div className="mb-4 inline-block h-8 w-8 animate-spin rounded-full border-4 border-solid border-indigo-600 border-r-transparent"></div>
-            <p className="text-slate-600">Loading billing records...</p>
+            <p className="text-slate-600">Loading billing dashboard...</p>
           </div>
         </div>
       </div>
@@ -230,330 +166,130 @@ function OPDBilling() {
         <header className="sticky top-0 z-30 border-b border-slate-200 bg-white/95 backdrop-blur-sm shadow-sm">
           <div className="flex flex-col gap-3 px-4 py-3 sm:flex-row sm:items-center sm:justify-between sm:px-6 sm:py-4 lg:px-8">
             <div>
-              <h1 className="text-xl font-bold text-slate-900 sm:text-2xl">OPD Billing</h1>
-              <p className="mt-1 text-xs text-slate-600 sm:mt-1.5 sm:text-sm">
-                Manage OPD billing and payments
-              </p>
+              <h1 className="text-xl font-bold text-slate-900 sm:text-2xl">Billing Dashboard (OPD)</h1>
             </div>
           </div>
         </header>
 
         <main className="flex-1 px-4 py-6 sm:px-6 sm:py-8 lg:px-8">
-          {/* Statistics */}
-          <div className="mb-6 grid grid-cols-1 gap-4 sm:grid-cols-4">
-            <div className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
-              <p className="text-sm font-medium text-slate-600">Total Revenue</p>
-              <p className="mt-1 text-2xl font-bold text-slate-900">₹{stats.totalRevenue.toLocaleString()}</p>
-              <p className="mt-1 text-xs text-slate-500">{stats.totalRecords} records</p>
+          {/* Summary Cards */}
+          <div className="mb-8 grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
+            {/* Cash Memo Card */}
+            <div className="group relative overflow-hidden rounded-xl border border-green-200 bg-white p-6 shadow-sm transition hover:shadow-md">
+              <div className="flex items-start justify-between">
+                <div className="flex-1">
+                  <p className="text-sm font-medium text-slate-600">Cash Memo</p>
+                  <p className="mt-2 text-3xl font-bold text-green-600">{stats.cashMemo}</p>
+                </div>
+                <div className="flex h-12 w-12 items-center justify-center rounded-full bg-green-100">
+                  <svg className="h-6 w-6 text-green-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                  </svg>
+                </div>
+              </div>
+              <button
+                onClick={() => navigate("/opd/billing/cash-memo?action=add")}
+                className="mt-4 flex w-full items-center justify-center gap-2 rounded-lg border border-green-300 bg-green-50 px-3 py-2 text-sm font-medium text-green-700 transition hover:bg-green-100"
+              >
+                <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
+                </svg>
+                Add
+              </button>
             </div>
-            <div className="rounded-xl border border-emerald-200 bg-emerald-50 p-5 shadow-sm">
-              <p className="text-sm font-medium text-emerald-700">Paid Amount</p>
-              <p className="mt-1 text-2xl font-bold text-emerald-900">₹{stats.paidAmount.toLocaleString()}</p>
+
+            {/* Invoice Card */}
+            <div className="group relative overflow-hidden rounded-xl border border-orange-200 bg-white p-6 shadow-sm transition hover:shadow-md">
+              <div className="flex items-start justify-between">
+                <div className="flex-1">
+                  <p className="text-sm font-medium text-slate-600">Invoice</p>
+                  <p className="mt-2 text-3xl font-bold text-orange-600">{stats.invoice}</p>
+                </div>
+                <div className="flex h-12 w-12 items-center justify-center rounded-full bg-orange-100">
+                  <svg className="h-6 w-6 text-orange-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                  </svg>
+                </div>
+              </div>
+              <button
+                onClick={() => navigate("/opd/billing/invoice?action=add")}
+                className="mt-4 flex w-full items-center justify-center gap-2 rounded-lg border border-orange-300 bg-orange-50 px-3 py-2 text-sm font-medium text-orange-700 transition hover:bg-orange-100"
+              >
+                <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
+                </svg>
+                Add
+              </button>
             </div>
-            <div className="rounded-xl border border-red-200 bg-red-50 p-5 shadow-sm">
-              <p className="text-sm font-medium text-red-700">Pending Amount</p>
-              <p className="mt-1 text-2xl font-bold text-red-900">₹{stats.pendingAmount.toLocaleString()}</p>
+
+            {/* Receipt Card */}
+            <div className="group relative overflow-hidden rounded-xl border border-blue-200 bg-white p-6 shadow-sm transition hover:shadow-md">
+              <div className="flex items-start justify-between">
+                <div className="flex-1">
+                  <p className="text-sm font-medium text-slate-600">Receipt</p>
+                  <p className="mt-2 text-3xl font-bold text-blue-600">{stats.receipt}</p>
+                </div>
+                <div className="flex h-12 w-12 items-center justify-center rounded-full bg-blue-100">
+                  <svg className="h-6 w-6 text-blue-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                  </svg>
+                </div>
+              </div>
+              <button
+                onClick={() => navigate("/opd/billing/receipt?action=add")}
+                className="mt-4 flex w-full items-center justify-center gap-2 rounded-lg border border-blue-300 bg-blue-50 px-3 py-2 text-sm font-medium text-blue-700 transition hover:bg-blue-100"
+              >
+                <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
+                </svg>
+                Add
+              </button>
             </div>
-            <div className="rounded-xl border border-blue-200 bg-blue-50 p-5 shadow-sm">
-              <p className="text-sm font-medium text-blue-700">Collection Rate</p>
-              <p className="mt-1 text-2xl font-bold text-blue-900">
-                {stats.totalRevenue > 0
-                  ? ((stats.paidAmount / stats.totalRevenue) * 100).toFixed(1)
-                  : 0}
-                %
-              </p>
+
+            {/* Advance Card */}
+            <div className="group relative overflow-hidden rounded-xl border border-purple-200 bg-white p-6 shadow-sm transition hover:shadow-md">
+              <div className="flex items-start justify-between">
+                <div className="flex-1">
+                  <p className="text-sm font-medium text-slate-600">Advance</p>
+                  <p className="mt-2 text-3xl font-bold text-purple-600">{stats.advance}</p>
+                </div>
+                <div className="flex h-12 w-12 items-center justify-center rounded-full bg-purple-100">
+                  <svg className="h-6 w-6 text-purple-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                  </svg>
+                </div>
+              </div>
+              <button
+                onClick={() => navigate("/opd/billing/advance?action=add")}
+                className="mt-4 flex w-full items-center justify-center gap-2 rounded-lg border border-purple-300 bg-purple-50 px-3 py-2 text-sm font-medium text-purple-700 transition hover:bg-purple-100"
+              >
+                <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
+                </svg>
+                Add
+              </button>
             </div>
           </div>
 
-          {/* Filters */}
-          <div className="mb-4 grid grid-cols-1 gap-4 sm:grid-cols-5">
-            <div>
-              <select
-                value={filters.doctorId}
-                onChange={(e) => setFilters({ ...filters, doctorId: e.target.value })}
-                className="w-full rounded-xl border border-slate-300 bg-white py-2.5 px-3 text-sm text-slate-900 focus:border-indigo-500 focus:outline-none focus:ring-2 focus:ring-indigo-200 sm:py-3"
+          {/* Navigation Icons */}
+          <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-7">
+            {navigationItems.map((item) => (
+              <Link
+                key={item.path}
+                to={item.path}
+                className="group flex flex-col items-center gap-3 rounded-xl border border-slate-200 bg-white p-6 shadow-sm transition hover:border-indigo-300 hover:shadow-md"
               >
-                <option value="">All Doctors</option>
-                {doctors.map((doctor) => (
-                  <option key={doctor._id} value={doctor._id}>
-                    {doctor.name}
-                  </option>
-                ))}
-              </select>
-            </div>
-            <div>
-              <select
-                value={filters.paymentStatus}
-                onChange={(e) => setFilters({ ...filters, paymentStatus: e.target.value })}
-                className="w-full rounded-xl border border-slate-300 bg-white py-2.5 px-3 text-sm text-slate-900 focus:border-indigo-500 focus:outline-none focus:ring-2 focus:ring-indigo-200 sm:py-3"
-              >
-                <option value="">All Payment Status</option>
-                <option value="paid">Paid</option>
-                <option value="partial">Partial</option>
-                <option value="pending">Pending</option>
-              </select>
-            </div>
-            <div>
-              <select
-                value={filters.status}
-                onChange={(e) => setFilters({ ...filters, status: e.target.value })}
-                className="w-full rounded-xl border border-slate-300 bg-white py-2.5 px-3 text-sm text-slate-900 focus:border-indigo-500 focus:outline-none focus:ring-2 focus:ring-indigo-200 sm:py-3"
-              >
-                <option value="">All Status</option>
-                <option value="registered">Registered</option>
-                <option value="waiting">Waiting</option>
-                <option value="in-progress">In Progress</option>
-                <option value="completed">Completed</option>
-              </select>
-            </div>
-            <div>
-              <input
-                type="date"
-                value={filters.startDate}
-                onChange={(e) => setFilters({ ...filters, startDate: e.target.value })}
-                placeholder="Start Date"
-                className="w-full rounded-xl border border-slate-300 bg-white py-2.5 px-3 text-sm text-slate-900 focus:border-indigo-500 focus:outline-none focus:ring-2 focus:ring-indigo-200 sm:py-3"
-              />
-            </div>
-            <div>
-              <input
-                type="date"
-                value={filters.endDate}
-                onChange={(e) => setFilters({ ...filters, endDate: e.target.value })}
-                placeholder="End Date"
-                className="w-full rounded-xl border border-slate-300 bg-white py-2.5 px-3 text-sm text-slate-900 focus:border-indigo-500 focus:outline-none focus:ring-2 focus:ring-indigo-200 sm:py-3"
-              />
-            </div>
+                <div className={`flex h-16 w-16 items-center justify-center rounded-full ${item.color} transition group-hover:scale-110`}>
+                  {item.icon}
+                </div>
+                <span className="text-sm font-medium text-slate-700 group-hover:text-indigo-600">
+                  {item.name}
+                </span>
+              </Link>
+            ))}
           </div>
-
-          {/* Billing Table */}
-          <div className="overflow-x-auto rounded-xl border border-slate-200 bg-white shadow-sm">
-            <table className="w-full">
-              <thead className="bg-slate-50">
-                <tr>
-                  <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wider text-slate-700">
-                    OPD #
-                  </th>
-                  <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wider text-slate-700">
-                    Patient
-                  </th>
-                  <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wider text-slate-700">
-                    Doctor
-                  </th>
-                  <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wider text-slate-700">
-                    Visit Date
-                  </th>
-                  <th className="px-4 py-3 text-right text-xs font-semibold uppercase tracking-wider text-slate-700">
-                    Total Amount
-                  </th>
-                  <th className="px-4 py-3 text-right text-xs font-semibold uppercase tracking-wider text-slate-700">
-                    Paid Amount
-                  </th>
-                  <th className="px-4 py-3 text-right text-xs font-semibold uppercase tracking-wider text-slate-700">
-                    Balance
-                  </th>
-                  <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wider text-slate-700">
-                    Payment Status
-                  </th>
-                  <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wider text-slate-700">
-                    Status
-                  </th>
-                  <th className="px-4 py-3 text-center text-xs font-semibold uppercase tracking-wider text-slate-700">
-                    Actions
-                  </th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-slate-200">
-                {opdRecords.map((record) => {
-                  const balance = record.totalAmount - record.paidAmount;
-                  return (
-                    <tr key={record._id} className="hover:bg-slate-50">
-                      <td className="px-4 py-3 text-sm font-medium text-slate-900">
-                        <Link
-                          to={`/opd/${record._id}`}
-                          className="text-indigo-600 hover:text-indigo-800 hover:underline"
-                        >
-                          {record.opdNumber}
-                        </Link>
-                      </td>
-                      <td className="px-4 py-3 text-sm text-slate-900">
-                        <div>
-                          <p className="font-medium">{record.patientId.name}</p>
-                          <p className="text-xs text-slate-500">{record.patientId.patientId}</p>
-                          <p className="text-xs text-slate-500">{record.patientId.phone}</p>
-                        </div>
-                      </td>
-                      <td className="px-4 py-3 text-sm text-slate-900">{record.doctorId.name}</td>
-                      <td className="px-4 py-3 text-sm text-slate-900">
-                        <div>
-                          <p>{new Date(record.visitDate).toLocaleDateString()}</p>
-                          {record.visitTime && (
-                            <p className="text-xs text-slate-500">{record.visitTime}</p>
-                          )}
-                        </div>
-                      </td>
-                      <td className="px-4 py-3 text-right text-sm font-semibold text-slate-900">
-                        ₹{record.totalAmount.toLocaleString()}
-                      </td>
-                      <td className="px-4 py-3 text-right text-sm text-slate-900">
-                        ₹{record.paidAmount.toLocaleString()}
-                      </td>
-                      <td className="px-4 py-3 text-right text-sm font-semibold text-slate-900">
-                        ₹{balance.toLocaleString()}
-                      </td>
-                      <td className="px-4 py-3">
-                        <span
-                          className={`inline-flex rounded-full border px-2.5 py-1 text-xs font-semibold capitalize ${getPaymentStatusColor(
-                            record.paymentStatus
-                          )}`}
-                        >
-                          {record.paymentStatus}
-                        </span>
-                      </td>
-                      <td className="px-4 py-3">
-                        <span
-                          className={`inline-flex rounded-full border px-2.5 py-1 text-xs font-semibold capitalize ${getStatusColor(
-                            record.status
-                          )}`}
-                        >
-                          {record.status.replace("-", " ")}
-                        </span>
-                      </td>
-                      <td className="px-4 py-3 text-center">
-                        {hasPermission(PERMISSIONS.OPD_BILLING) && balance > 0 && (
-                          <button
-                            onClick={() => {
-                              setSelectedRecord(record);
-                              setPaymentData({
-                                paidAmount: balance.toString(),
-                                paymentMethod: "cash",
-                              });
-                              setShowPaymentModal(true);
-                            }}
-                            className="rounded-lg bg-indigo-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-indigo-700"
-                          >
-                            Pay
-                          </button>
-                        )}
-                      </td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
-          </div>
-
-          {opdRecords.length === 0 && (
-            <div className="py-16 text-center">
-              <svg
-                className="mx-auto mb-4 h-12 w-12 text-slate-400"
-                fill="none"
-                viewBox="0 0 24 24"
-                stroke="currentColor"
-              >
-                <path
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                  strokeWidth={2}
-                  d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"
-                />
-              </svg>
-              <p className="text-sm font-medium text-slate-600">No billing records found</p>
-            </div>
-          )}
         </main>
       </div>
-
-      {/* Payment Modal */}
-      {showPaymentModal && selectedRecord && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
-          <div className="w-full max-w-md rounded-xl border border-slate-200 bg-white shadow-xl">
-            <div className="px-4 py-3 sm:px-6 sm:py-4">
-              <h2 className="text-base font-semibold text-slate-900 sm:text-lg">Process Payment</h2>
-            </div>
-            <div className="px-4 sm:px-6 sm:pb-6">
-              <div className="mb-4 rounded-lg border border-slate-200 bg-slate-50 p-4">
-                <div className="mb-2 flex justify-between text-sm">
-                  <span className="text-slate-600">OPD Number:</span>
-                  <span className="font-medium text-slate-900">{selectedRecord.opdNumber}</span>
-                </div>
-                <div className="mb-2 flex justify-between text-sm">
-                  <span className="text-slate-600">Patient:</span>
-                  <span className="font-medium text-slate-900">{selectedRecord.patientId.name}</span>
-                </div>
-                <div className="mb-2 flex justify-between text-sm">
-                  <span className="text-slate-600">Total Amount:</span>
-                  <span className="font-medium text-slate-900">₹{selectedRecord.totalAmount.toLocaleString()}</span>
-                </div>
-                <div className="mb-2 flex justify-between text-sm">
-                  <span className="text-slate-600">Paid Amount:</span>
-                  <span className="font-medium text-slate-900">₹{selectedRecord.paidAmount.toLocaleString()}</span>
-                </div>
-                <div className="flex justify-between text-sm font-semibold">
-                  <span className="text-slate-900">Balance:</span>
-                  <span className="text-indigo-600">
-                    ₹{(selectedRecord.totalAmount - selectedRecord.paidAmount).toLocaleString()}
-                  </span>
-                </div>
-              </div>
-
-              <div className="space-y-4">
-                <div>
-                  <label className="block text-sm font-medium text-slate-700 mb-2">Payment Amount *</label>
-                  <input
-                    type="number"
-                    required
-                    min="0.01"
-                    max={selectedRecord.totalAmount - selectedRecord.paidAmount}
-                    step="0.01"
-                    value={paymentData.paidAmount}
-                    onChange={(e) => setPaymentData({ ...paymentData, paidAmount: e.target.value })}
-                    className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:border-indigo-500 focus:outline-none focus:ring-2 focus:ring-indigo-200"
-                    placeholder="Enter payment amount"
-                  />
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-slate-700 mb-2">Payment Method *</label>
-                  <select
-                    required
-                    value={paymentData.paymentMethod}
-                    onChange={(e) => setPaymentData({ ...paymentData, paymentMethod: e.target.value })}
-                    className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:border-indigo-500 focus:outline-none focus:ring-2 focus:ring-indigo-200"
-                  >
-                    <option value="cash">Cash</option>
-                    <option value="card">Card</option>
-                    <option value="upi">UPI</option>
-                    <option value="netbanking">Net Banking</option>
-                    <option value="cheque">Cheque</option>
-                    <option value="other">Other</option>
-                  </select>
-                </div>
-              </div>
-
-              <div className="mt-6 flex gap-3">
-                <button
-                  type="button"
-                  onClick={() => {
-                    setShowPaymentModal(false);
-                    setSelectedRecord(null);
-                    setPaymentData({ paidAmount: "", paymentMethod: "cash" });
-                  }}
-                  className="flex-1 rounded-lg border border-slate-300 bg-white px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50"
-                >
-                  Cancel
-                </button>
-                <button
-                  type="button"
-                  onClick={handleProcessPayment}
-                  className="flex-1 rounded-lg bg-indigo-700 px-4 py-2 text-sm font-medium text-white hover:bg-indigo-800"
-                >
-                  Process Payment
-                </button>
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
     </div>
   );
 }
